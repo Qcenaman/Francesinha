@@ -1,7 +1,10 @@
 package com.qcenaman.francesinha.logic
 
+import com.qcenaman.francesinha.model.ExtraType
 import com.qcenaman.francesinha.model.PauseType
 import com.qcenaman.francesinha.model.Session
+import com.qcenaman.francesinha.model.Tax
+import java.util.Calendar
 
 data class Totals(
     val sessions: Int = 0,
@@ -15,13 +18,37 @@ data class Totals(
     val mealEuros: Double = 0.0,
     val sleepoverEuros: Double = 0.0,
     val paidMs: Long = 0,
+    val overtimeMs: Long = 0,
     val hourPay: Double = 0.0,
+    val overtimePay: Double = 0.0,
+    val adjustEuros: Double = 0.0,
+    val kmPay: Double = 0.0,
+    val supplementPay: Double = 0.0,
+    val nightMs: Long = 0,
+    val weekendMs: Long = 0,
+    val expenseEuros: Double = 0.0,
+    val refundedEuros: Double = 0.0,
+    val taxable: Double = 0.0,
+    /** Expected pay of the trips that have an invoice amount, and the invoiced total. */
+    val invoicedExpected: Double = 0.0,
+    val invoiced: Double = 0.0,
+    val invoicedTrips: Int = 0,
 ) {
-    /** Everything earned: hours + meals + sleepovers. */
-    val euros: Double get() = hourPay + mealEuros + sleepoverEuros
+    /** Everything earned (gross): hours, overtime, supplements, km, meals, sleepovers, extras, refunds. */
+    val euros: Double get() = hourPay + overtimePay + supplementPay + kmPay + mealEuros + sleepoverEuros + adjustEuros + refundedEuros
+    val invoiceDiff: Double get() = invoiced - invoicedExpected
+}
+
+object TaxCalc {
+    fun percent(taxes: List<Tax>): Double = taxes.sumOf { it.percent }
+    fun amount(taxable: Double, taxes: List<Tax>): Double = taxable.coerceAtLeast(0.0) * percent(taxes) / 100.0
+    fun net(gross: Double, taxable: Double, taxes: List<Tax>): Double = gross - amount(taxable, taxes)
 }
 
 object Stats {
+    private const val H = 3_600_000.0
+    private const val MIN = 60_000L
+
     fun totalMs(s: Session, now: Long): Long = ((s.end ?: now) - s.start).coerceAtLeast(0)
 
     fun pauseMs(s: Session, now: Long, type: PauseType? = null): Long {
@@ -33,6 +60,28 @@ object Stats {
         }
     }
 
+    /** The trip's time minus the given pauses, as [start, end) intervals. */
+    private fun intervals(s: Session, now: Long, cut: (PauseType) -> Boolean): List<Pair<Long, Long>> {
+        val sEnd = s.end ?: now
+        var parts = listOf(s.start to sEnd)
+        for (p in s.pauses.filter { cut(it.type) }) {
+            val ps = p.start
+            val pe = p.end ?: now
+            parts = parts.flatMap { (a, b) ->
+                if (pe <= a || ps >= b) listOf(a to b)
+                else listOfNotNull(if (ps > a) a to ps else null, if (pe < b) pe to b else null)
+            }
+        }
+        return parts.filter { it.second > it.first }
+    }
+
+    fun drivingIntervals(s: Session, now: Long) = intervals(s, now) { true }
+    fun paidIntervals(s: Session, now: Long) = intervals(s, now) { !s.paidBreaks && !it.paid }
+
+    /** Driving time that falls between [from] and [to]. */
+    fun drivingBetween(s: Session, from: Long, to: Long, now: Long): Long =
+        drivingIntervals(s, now).sumOf { (a, b) -> (minOf(b, to) - maxOf(a, from)).coerceAtLeast(0) }
+
     /** Paid working time: on-duty time minus unpaid breaks/rest (unless the job pays breaks). */
     fun paidMs(s: Session, now: Long): Long {
         if (s.paidBreaks) return totalMs(s, now)
@@ -40,11 +89,96 @@ object Stats {
         return (totalMs(s, now) - unpaid).coerceAtLeast(0)
     }
 
-    fun hourPay(s: Session, now: Long): Double = (s.hourlyRate ?: 0.0) * paidMs(s, now) / 3_600_000.0
+    fun overtimeMs(s: Session, now: Long): Long {
+        val after = s.overtimeAfterMin ?: return 0
+        return (paidMs(s, now) - after * MIN).coerceAtLeast(0)
+    }
 
-    fun extrasEuros(s: Session): Double = s.extras.sumOf { it.euros }
+    fun normalMs(s: Session, now: Long): Long = paidMs(s, now) - overtimeMs(s, now)
 
-    fun totalPay(s: Session, now: Long): Double = hourPay(s, now) + extrasEuros(s)
+    /** Pay for normal (non-overtime) hours. */
+    fun hourPay(s: Session, now: Long): Double = (s.hourlyRate ?: 0.0) * normalMs(s, now) / H
+
+    fun overtimePay(s: Session, now: Long): Double =
+        (s.overtimeRate ?: s.hourlyRate ?: 0.0) * overtimeMs(s, now) / H
+
+    private fun paidMinutesWhere(s: Session, now: Long, test: (Calendar) -> Boolean): Long {
+        val c = Calendar.getInstance()
+        var n = 0L
+        for ((a, b) in paidIntervals(s, now)) {
+            var t = a
+            while (t < b) {
+                c.timeInMillis = t
+                if (test(c)) n += minOf(MIN, b - t)
+                t += MIN
+            }
+        }
+        return n
+    }
+
+    fun nightMs(s: Session, now: Long): Long {
+        if ((s.nightPct ?: 0.0) == 0.0) return 0
+        val from = s.nightFromHour
+        val to = s.nightToHour
+        return paidMinutesWhere(s, now) { c ->
+            val h = c.get(Calendar.HOUR_OF_DAY)
+            if (from <= to) h in from until to else h >= from || h < to
+        }
+    }
+
+    fun weekendMs(s: Session, now: Long): Long {
+        if ((s.weekendPct ?: 0.0) == 0.0) return 0
+        return paidMinutesWhere(s, now) { c ->
+            val d = c.get(Calendar.DAY_OF_WEEK)
+            d == Calendar.SATURDAY || d == Calendar.SUNDAY
+        }
+    }
+
+    /** Night, weekend and holiday extras (a % of the hourly rate for that time). */
+    fun supplementPay(s: Session, now: Long): Double {
+        val rate = s.hourlyRate ?: return 0.0
+        val night = nightMs(s, now) * (s.nightPct ?: 0.0)
+        val weekend = weekendMs(s, now) * (s.weekendPct ?: 0.0)
+        val holiday = if (s.holiday) paidMs(s, now) * (s.holidayPct ?: 0.0) else 0.0
+        return rate * (night + weekend + holiday) / 100.0 / H
+    }
+
+    fun kmPay(s: Session): Double = (s.perKmRate ?: 0.0) * s.km()
+
+    /** Pay for the work itself; % custom items are worked out from this. */
+    fun workPay(s: Session, now: Long): Double =
+        hourPay(s, now) + overtimePay(s, now) + supplementPay(s, now) + kmPay(s)
+
+    fun extraValue(e: com.qcenaman.francesinha.model.Extra, s: Session, now: Long): Double {
+        val pct = e.percent
+        return if (e.type == ExtraType.CUSTOM && pct != null) {
+            val v = workPay(s, now) * pct / 100.0
+            if (e.deduct) -v else v
+        } else {
+            e.signedEuros
+        }
+    }
+
+    fun extrasEuros(s: Session, now: Long = s.end ?: System.currentTimeMillis()): Double =
+        s.extras.sumOf { extraValue(it, s, now) }
+
+    fun mealEuros(s: Session): Double = s.extras.filter { it.type.isMeal }.sumOf { it.euros }
+    fun sleepoverEuros(s: Session): Double = s.extras.filter { it.type.isSleepover }.sumOf { it.euros }
+    fun adjustEuros(s: Session, now: Long = s.end ?: System.currentTimeMillis()): Double =
+        s.extras.filter { it.type.isAdjustment }.sumOf { extraValue(it, s, now) }
+
+    fun expenseEuros(s: Session): Double = s.extras.filter { it.type.isExpense }.sumOf { it.euros }
+    fun refundedEuros(s: Session): Double = s.extras.filter { it.type.isExpense && it.refunded }.sumOf { it.euros }
+
+    /** Expected (gross) pay for the trip. */
+    fun totalPay(s: Session, now: Long): Double = workPay(s, now) + extrasEuros(s, now)
+
+    /** Part of the pay that taxes apply to (refunds and, if exempt, meals/sleepovers left out). */
+    fun taxable(s: Session, now: Long, mealsExempt: Boolean): Double =
+        totalPay(s, now) - refundedEuros(s) - if (mealsExempt) mealEuros(s) + sleepoverEuros(s) else 0.0
+
+    /** Invoice minus expected (null if no invoice entered). */
+    fun invoiceDiff(s: Session, now: Long): Double? = s.invoiceEuros?.let { it - totalPay(s, now) }
 
     fun drivingMs(s: Session, now: Long): Long = (totalMs(s, now) - pauseMs(s, now)).coerceAtLeast(0)
 
@@ -59,10 +193,10 @@ object Stats {
         return ((s.end ?: now) - lastReset - shortPauses).coerceAtLeast(0)
     }
 
-    fun totals(list: List<Session>, now: Long): Totals {
+    fun totals(list: List<Session>, now: Long, mealsExempt: Boolean = true): Totals {
         val byType = PauseType.entries.associateWith { t -> list.sumOf { pauseMs(it, now, t) } }
             .filterValues { it > 0 }
-        val extras = list.flatMap { it.extras }
+        val invoicedList = list.filter { it.invoiceEuros != null }
         return Totals(
             sessions = list.size,
             totalMs = list.sumOf { totalMs(it, now) },
@@ -70,15 +204,59 @@ object Stats {
             pauseMs = list.sumOf { pauseMs(it, now) },
             km = list.sumOf { it.km() },
             pauseByType = byType,
-            meals = extras.count { it.type.isMeal },
-            sleepovers = extras.count { !it.type.isMeal },
-            mealEuros = extras.filter { it.type.isMeal }.sumOf { it.euros },
-            sleepoverEuros = extras.filter { !it.type.isMeal }.sumOf { it.euros },
+            meals = list.sumOf { s -> s.extras.count { it.type.isMeal } },
+            sleepovers = list.sumOf { s -> s.extras.count { it.type.isSleepover } },
+            mealEuros = list.sumOf { mealEuros(it) },
+            sleepoverEuros = list.sumOf { sleepoverEuros(it) },
             paidMs = list.sumOf { paidMs(it, now) },
+            overtimeMs = list.sumOf { overtimeMs(it, now) },
             hourPay = list.sumOf { hourPay(it, now) },
+            overtimePay = list.sumOf { overtimePay(it, now) },
+            adjustEuros = list.sumOf { adjustEuros(it, now) },
+            kmPay = list.sumOf { kmPay(it) },
+            supplementPay = list.sumOf { supplementPay(it, now) },
+            nightMs = list.sumOf { nightMs(it, now) },
+            weekendMs = list.sumOf { weekendMs(it, now) },
+            expenseEuros = list.sumOf { expenseEuros(it) },
+            refundedEuros = list.sumOf { refundedEuros(it) },
+            taxable = list.sumOf { taxable(it, now, mealsExempt) },
+            invoicedExpected = invoicedList.sumOf { totalPay(it, now) },
+            invoiced = invoicedList.sumOf { it.invoiceEuros ?: 0.0 },
+            invoicedTrips = invoicedList.size,
         )
     }
 
     fun inRange(list: List<Session>, from: Long, to: Long): List<Session> =
         list.filter { it.start in from until to }
+}
+
+/** EU driving-time rules (approximate; not a replacement for the tachograph). */
+object Limits {
+    const val DAILY_MS = 9 * 3_600_000L
+    const val DAILY_EXTENDED_MS = 10 * 3_600_000L
+    const val WEEKLY_MS = 56 * 3_600_000L
+    const val FORTNIGHT_MS = 90 * 3_600_000L
+
+    data class Status(val todayMs: Long, val weekMs: Long, val fortnightMs: Long, val extendedDaysThisWeek: Int) {
+        val dailyOver get() = todayMs > DAILY_MS
+        val weeklyOver get() = weekMs > WEEKLY_MS
+        val fortnightOver get() = fortnightMs > FORTNIGHT_MS
+        /** Driving 9–10 h is allowed at most twice a week. */
+        val extendedTooOften get() = extendedDaysThisWeek > 2
+    }
+
+    fun status(sessions: List<Session>, now: Long): Status {
+        val (dayFrom, dayTo) = Period.TODAY.range(now)
+        val (weekFrom, weekTo) = Period.WEEK.range(now)
+        val (lastWeekFrom, _) = Period.LAST_WEEK.range(now)
+        fun driving(from: Long, to: Long) = sessions.sumOf { Stats.drivingBetween(it, from, to, now) }
+        var extended = 0
+        var d = weekFrom
+        while (d < weekTo && d <= now) {
+            val next = Calendar.getInstance().apply { timeInMillis = d; add(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
+            if (driving(d, next) > DAILY_MS) extended++
+            d = next
+        }
+        return Status(driving(dayFrom, dayTo), driving(weekFrom, weekTo), driving(lastWeekFrom, weekTo), extended)
+    }
 }

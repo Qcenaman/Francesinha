@@ -1,5 +1,6 @@
 package com.qcenaman.francesinha.service
 
+import com.qcenaman.francesinha.logic.tr
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
@@ -81,6 +82,7 @@ class TrackingService : Service(), LocationListener {
             handle(detector.onTick(System.currentTimeMillis()))
             flushDistance()
             updateNotification()
+            checkAlert()
             handler.postDelayed(this, 30_000)
         }
     }
@@ -89,6 +91,7 @@ class TrackingService : Service(), LocationListener {
 
     override fun onCreate() {
         super.onCreate()
+        com.qcenaman.francesinha.logic.I18n.lang = Prefs.lang(this)
         Store.init(this)
         lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         createChannels()
@@ -203,7 +206,7 @@ class TrackingService : Service(), LocationListener {
                     System.currentTimeMillis() >= suppressAutoStartUntil
                 ) {
                     pendingMeters = 0.0
-                    Store.startSession(e.time, true, e.lat, e.lon, Prefs.rate(this))
+                    Store.startSession(e.time, true, e.lat, e.lon) { Prefs.newSessionDefaults(this, it) }
                     changed = true
                 }
                 is DetectorEvent.PauseStarted -> if (auto) {
@@ -230,7 +233,37 @@ class TrackingService : Service(), LocationListener {
         checkAlert()
     }
 
+    private var lastLimitKey: String? = null
+
+    private fun checkLimits() {
+        if (!Prefs.limitAlerts(this) || Store.openSession() == null) return
+        val now = System.currentTimeMillis()
+        val st = com.qcenaman.francesinha.logic.Limits.status(Store.sessions.value, now)
+        val msg = when {
+            st.todayMs >= com.qcenaman.francesinha.logic.Limits.DAILY_EXTENDED_MS -> tr("You've reached 10h of driving today.")
+            st.todayMs >= com.qcenaman.francesinha.logic.Limits.DAILY_MS -> tr("You've reached 9h of driving today.")
+            st.weekMs >= com.qcenaman.francesinha.logic.Limits.WEEKLY_MS -> tr("You've reached 56h of driving this week.")
+            st.fortnightMs >= com.qcenaman.francesinha.logic.Limits.FORTNIGHT_MS -> tr("You've reached 90h of driving in two weeks.")
+            else -> null
+        } ?: return
+        val key = Fmt.isoDate(now) + msg
+        if (key == lastLimitKey) return
+        lastLimitKey = key
+        notify(
+            ALERT_ID + 1,
+            NotificationCompat.Builder(this, CH_ALERT)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(tr("Driving limits (EU)"))
+                .setContentText(msg)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(openAppIntent())
+                .setAutoCancel(true)
+                .build(),
+        )
+    }
+
     private fun checkAlert() {
+        checkLimits()
         if (!cfg.alertsOn) return
         val s = Store.openSession() ?: return
         val now = System.currentTimeMillis()
@@ -241,8 +274,8 @@ class TrackingService : Service(), LocationListener {
         lastAlertKey = key
         val n = NotificationCompat.Builder(this, CH_ALERT)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Time for a break")
-            .setContentText("You've been driving ${Fmt.duration(cont)} without a proper break.")
+            .setContentTitle(tr("Time for a break"))
+            .setContentText(tr("You've been driving %s without a proper break.", Fmt.duration(cont)))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openAppIntent())
             .setAutoCancel(true)
@@ -259,14 +292,14 @@ class TrackingService : Service(), LocationListener {
         val s = Store.openSession()
         val now = System.currentTimeMillis()
         val gpsOff = try { !lm.isProviderEnabled(LocationManager.GPS_PROVIDER) } catch (_: Exception) { false }
-        if (gpsOff) return "GPS is off" to "Turn on Location so trips can be recorded"
-        if (s == null) return "Waiting for driving" to "A trip starts automatically when you drive"
+        if (gpsOff) return tr("GPS is off") to tr("Turn on Location so trips can be recorded")
+        if (s == null) return tr("Waiting for driving") to tr("A trip starts automatically when you drive")
         val km = s.km() + pendingMeters / 1000.0
         val p = s.openPause
         return if (p != null) {
-            "${p.type.label} since ${Fmt.time(p.start)}" to "Driving ${Fmt.duration(Stats.drivingMs(s, now))} · ${Fmt.km(km)}"
+            tr("%s since %s", tr(p.type.label), Fmt.time(p.start)) to tr("Driving %s · %s", Fmt.duration(Stats.drivingMs(s, now)), Fmt.km(km))
         } else {
-            "Driving · ${Fmt.duration(Stats.drivingMs(s, now))}" to "${Fmt.km(km)} · started ${Fmt.time(s.start)}"
+            tr("Driving · %s", Fmt.duration(Stats.drivingMs(s, now))) to tr("%s · started %s", Fmt.km(km), Fmt.time(s.start))
         }
     }
 
@@ -295,10 +328,10 @@ class TrackingService : Service(), LocationListener {
     private fun createChannels() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CH_TRACK, "Trip tracking", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CH_TRACK, tr("Trip tracking"), NotificationManager.IMPORTANCE_LOW),
         )
         nm.createNotificationChannel(
-            NotificationChannel(CH_ALERT, "Driving time alerts", NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(CH_ALERT, tr("Driving time alerts"), NotificationManager.IMPORTANCE_HIGH),
         )
     }
 }

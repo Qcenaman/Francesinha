@@ -1,5 +1,6 @@
 package com.qcenaman.francesinha.ui
 
+import com.qcenaman.francesinha.logic.tr
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -53,6 +54,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.qcenaman.francesinha.data.Prefs
 import com.qcenaman.francesinha.data.Store
 import com.qcenaman.francesinha.logic.Fmt
+import com.qcenaman.francesinha.logic.Limits
 import com.qcenaman.francesinha.logic.Period
 import com.qcenaman.francesinha.logic.Stats
 import com.qcenaman.francesinha.model.ExtraType
@@ -82,6 +84,7 @@ fun HomeScreen(modifier: Modifier, onEdit: (Long) -> Unit) {
     ) {
         item { PermissionsCard() }
         item { StatusCard(open, now) }
+        item { LimitsCard(sessions, now) }
         item {
             Card {
                 Row(
@@ -89,9 +92,9 @@ fun HomeScreen(modifier: Modifier, onEdit: (Long) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Automatic trips", fontWeight = FontWeight.Bold)
+                        Text(tr("Automatic trips"), fontWeight = FontWeight.Bold)
                         Text(
-                            if (auto) "Trips and breaks are detected by GPS" else "Off: start and stop trips by hand",
+                            if (auto) tr("Trips and breaks are detected by GPS") else tr("Off: start and stop trips by hand"),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -107,46 +110,46 @@ fun HomeScreen(modifier: Modifier, onEdit: (Long) -> Unit) {
         item {
             Card {
                 Column(Modifier.padding(16.dp)) {
-                    Text("Today", fontWeight = FontWeight.Bold)
+                    Text(tr("Today"), fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     StatRow(
-                        "Driving" to Fmt.duration(today.drivingMs),
-                        "Breaks" to Fmt.duration(today.pauseMs),
-                        "Distance" to Fmt.km(today.km),
+                        tr("Driving") to Fmt.duration(today.drivingMs),
+                        tr("Breaks") to Fmt.duration(today.pauseMs),
+                        tr("Distance") to Fmt.km(today.km),
                     )
                     Spacer(Modifier.height(8.dp))
                     StatRow(
-                        "Meals" to today.meals.toString(),
-                        "Sleepovers" to today.sleepovers.toString(),
-                        "Pay" to Fmt.eur(today.euros),
+                        tr("Meals") to today.meals.toString(),
+                        tr("Sleepovers") to today.sleepovers.toString(),
+                        tr("Pay") to Fmt.eur(today.euros),
                     )
                     Spacer(Modifier.height(12.dp))
-                    Text("This week", fontWeight = FontWeight.Bold)
+                    Text(tr("This week"), fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     StatRow(
-                        "Driving" to Fmt.duration(week.drivingMs),
-                        "On duty" to Fmt.duration(week.totalMs),
-                        "Distance" to Fmt.km(week.km),
+                        tr("Driving") to Fmt.duration(week.drivingMs),
+                        tr("On duty") to Fmt.duration(week.totalMs),
+                        tr("Distance") to Fmt.km(week.km),
                     )
                     Spacer(Modifier.height(8.dp))
                     StatRow(
-                        "Meals" to week.meals.toString(),
-                        "Sleepovers" to week.sleepovers.toString(),
-                        "Pay" to Fmt.eur(week.euros),
+                        tr("Meals") to week.meals.toString(),
+                        tr("Sleepovers") to week.sleepovers.toString(),
+                        tr("Pay") to Fmt.eur(week.euros),
                     )
                 }
             }
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Trips", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Button(onClick = { onEdit(0L) }) { Text("+ Add trip by hand") }
+                Text(tr("Trips"), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Button(onClick = { onEdit(0L) }) { Text(tr("+ Add trip by hand")) }
             }
         }
         if (sessions.isEmpty()) {
             item {
                 Text(
-                    "No trips yet. Start driving with automatic trips on, or tap Start trip.",
+                    tr("No trips yet. Start driving with automatic trips on, or tap Start trip."),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -169,29 +172,29 @@ private fun StatusCard(open: Session?, now: Long) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             when {
                 open == null -> {
-                    Text("Not on a trip", style = MaterialTheme.typography.headlineSmall)
-                    Text("Driving will start a trip automatically, or start one now.")
+                    Text(tr("Not on a trip"), style = MaterialTheme.typography.headlineSmall)
+                    Text(tr("Driving will start a trip automatically, or start one now."))
                 }
                 pause != null -> {
-                    Text("${pause.type.label} since ${Fmt.time(pause.start)}", style = MaterialTheme.typography.headlineSmall)
-                    Text("${Fmt.duration(now - pause.start)} so far")
+                    Text(tr("%s since %s", tr(pause.type.label), Fmt.time(pause.start)), style = MaterialTheme.typography.headlineSmall)
+                    Text(tr("%s so far", Fmt.duration(now - pause.start)))
                 }
                 else -> {
-                    Text("Driving", style = MaterialTheme.typography.headlineSmall)
-                    Text("Since last break: ${Fmt.duration(Stats.continuousDrivingMs(open, now))}")
+                    Text(tr("Driving"), style = MaterialTheme.typography.headlineSmall)
+                    Text(tr("Since last break: %s", Fmt.duration(Stats.continuousDrivingMs(open, now))))
                 }
             }
             if (open != null) {
                 Spacer(Modifier.height(8.dp))
                 StatRow(
-                    "Started" to Fmt.time(open.start),
-                    "Driving" to Fmt.duration(Stats.drivingMs(open, now)),
-                    "Distance" to Fmt.km(open.km()),
+                    tr("Started") to Fmt.time(open.start),
+                    tr("Driving") to Fmt.duration(Stats.drivingMs(open, now)),
+                    tr("Distance") to Fmt.km(open.km()),
                 )
                 if (open.hourlyRate != null || open.extras.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Earned so far: ${Fmt.eur(Stats.totalPay(open, now))}" +
+                        tr("Earned so far: %s", Fmt.eur(Stats.totalPay(open, now))) +
                             (open.hourlyRate?.let { " (${Fmt.eur(it)}/h)" } ?: ""),
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -202,11 +205,11 @@ private fun StatusCard(open: Session?, now: Long) {
                 if (open == null) {
                     Button(
                         onClick = {
-                            Store.startSession(System.currentTimeMillis(), auto = false, rate = Prefs.rate(ctx))
+                            Store.startSession(System.currentTimeMillis(), auto = false) { Prefs.newSessionDefaults(ctx, it) }
                             TrackingService.refresh(ctx)
                         },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
-                    ) { Text("Start trip") }
+                    ) { Text(tr("Start trip")) }
                 } else {
                     if (pause != null) {
                         Button(
@@ -215,15 +218,15 @@ private fun StatusCard(open: Session?, now: Long) {
                                 TrackingService.refresh(ctx)
                             },
                             modifier = Modifier.weight(1f).height(56.dp),
-                        ) { Text("End ${pause.type.label.lowercase()}") }
+                        ) { Text(tr("End: %s", tr(pause.type.label))) }
                     } else {
                         Box(Modifier.weight(1f)) {
                             Button(onClick = { typeMenu = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                                Text("Start break ▾")
+                                Text(tr("Start break ▾"))
                             }
                             DropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
                                 PauseType.entries.forEach { t ->
-                                    DropdownMenuItem(text = { Text(t.label) }, onClick = {
+                                    DropdownMenuItem(text = { Text(tr(t.label)) }, onClick = {
                                         typeMenu = false
                                         Store.startPause(System.currentTimeMillis(), t, auto = false)
                                         TrackingService.refresh(ctx)
@@ -240,7 +243,7 @@ private fun StatusCard(open: Session?, now: Long) {
                         },
                         modifier = Modifier.weight(1f).height(56.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    ) { Text("End trip") }
+                    ) { Text(tr("End trip")) }
                 }
             }
         }
@@ -251,32 +254,48 @@ private fun StatusCard(open: Session?, now: Long) {
 private fun ExtrasQuickCard(hasTrips: Boolean, open: Boolean) {
     val ctx = LocalContext.current
     var menu by remember { mutableStateOf(false) }
+    var adjMenu by remember { mutableStateOf(false) }
+    var dialog by remember { mutableStateOf<ExtraType?>(null) }
     var msg by remember { mutableStateOf<String?>(null) }
+    fun addItem(e: com.qcenaman.francesinha.model.Extra) {
+        msg = if (Store.addExtraItem(e)) {
+            val v = if (e.percent != null) Fmt.num(e.percent) + "%" else Fmt.eur(if (e.type == ExtraType.CUSTOM && e.deduct) -e.euros else e.type.sign * e.euros)
+            tr(if (open) "%s (%s) added to this trip" else "%s (%s) added to the last trip", e.name.ifBlank { tr(e.type.label) }, v)
+        } else {
+            tr("Start or add a trip first")
+        }
+    }
+    dialog?.let { t ->
+        QuickExtraDialog(t, onDismiss = { dialog = null }) { e ->
+            dialog = null
+            addItem(e)
+        }
+    }
     fun add(t: ExtraType) {
         val eur = Prefs.euros(ctx, t)
         msg = if (Store.addExtra(t, System.currentTimeMillis(), eur)) {
-            "${t.label} (${Fmt.eur(eur)}) added to ${if (open) "this trip" else "the last trip"}"
+            tr(if (open) "%s (%s) added to this trip" else "%s (%s) added to the last trip", tr(t.label), Fmt.eur(t.sign * eur))
         } else {
-            "Start or add a trip first"
+            tr("Start or add a trip first")
         }
     }
     Card {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text("Meals & sleepovers", fontWeight = FontWeight.Bold)
+            Text(tr("Meals, sleepovers & extras"), fontWeight = FontWeight.Bold)
             Text(
-                if (open) "Adds to the current trip" else if (hasTrips) "Adds to the last trip" else "No trip yet",
+                if (open) tr("Adds to the current trip") else if (hasTrips) tr("Adds to the last trip") else tr("No trip yet"),
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.weight(1f)) {
                     Button(onClick = { menu = true }, Modifier.fillMaxWidth().height(52.dp), enabled = hasTrips) {
-                        Text("+ Meal ▾")
+                        Text(tr("+ Meal ▾"))
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         ExtraType.entries.filter { it.isMeal }.forEach { t ->
                             DropdownMenuItem(
-                                text = { Text("${t.label}  ${Fmt.eur(Prefs.euros(ctx, t))}") },
+                                text = { Text(tr(t.label) + "  " + Fmt.eur(Prefs.euros(ctx, t))) },
                                 onClick = { menu = false; add(t) },
                             )
                         }
@@ -285,7 +304,36 @@ private fun ExtrasQuickCard(hasTrips: Boolean, open: Boolean) {
                 Button(
                     onClick = { add(ExtraType.SLEEPOVER) },
                     modifier = Modifier.weight(1f).height(52.dp), enabled = hasTrips,
-                ) { Text("+ Sleepover") }
+                ) { Text(tr("+ Sleepover")) }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { adjMenu = true }, Modifier.fillMaxWidth(), enabled = hasTrips) {
+                        Text(tr("+ Extras ▾"))
+                    }
+                    DropdownMenu(expanded = adjMenu, onDismissRequest = { adjMenu = false }) {
+                        extraChoices(ctx, ExtraType.entries.filter { it.isAdjustment && it != ExtraType.CUSTOM }).forEach { c ->
+                            DropdownMenuItem(text = { Text(c.label) }, onClick = {
+                                adjMenu = false
+                                addItem(c.make(System.currentTimeMillis()))
+                            })
+                        }
+                        extraChoices(ctx, listOf(ExtraType.CUSTOM)).drop(1).forEach { c ->
+                            DropdownMenuItem(text = { Text(c.label) }, onClick = {
+                                adjMenu = false
+                                addItem(c.make(System.currentTimeMillis()))
+                            })
+                        }
+                        DropdownMenuItem(text = { Text(tr("Custom item…")) }, onClick = {
+                            adjMenu = false
+                            dialog = ExtraType.CUSTOM
+                        })
+                    }
+                }
+                OutlinedButton(onClick = { dialog = ExtraType.EXPENSE }, Modifier.weight(1f), enabled = hasTrips) {
+                    Text(tr("+ Expense"))
+                }
             }
             msg?.let {
                 Spacer(Modifier.height(6.dp))
@@ -302,7 +350,7 @@ private fun SessionRow(s: Session, now: Long, onClick: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(Fmt.date(s.start), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(
-                    "${Fmt.time(s.start)} – ${s.end?.let { Fmt.time(it) } ?: "now"}",
+                    Fmt.time(s.start) + " – " + (s.end?.let { Fmt.time(it) } ?: tr("now")),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -310,24 +358,31 @@ private fun SessionRow(s: Session, now: Long, onClick: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             val breaks = s.pauses.size
             Text(
-                "Driving ${Fmt.duration(Stats.drivingMs(s, now))} · ${Fmt.km(s.km())} · " +
-                    "$breaks ${if (breaks == 1) "stop" else "stops"} (${Fmt.duration(Stats.pauseMs(s, now))})" +
-                    if (s.auto) " · auto" else "",
+                tr("Driving %s · %s · ", Fmt.duration(Stats.drivingMs(s, now)), Fmt.km(s.km())) +
+                    tr(if (breaks == 1) "%d stop (%s)" else "%d stops (%s)", breaks, Fmt.duration(Stats.pauseMs(s, now))) +
+                    if (s.auto) tr(" · auto") else "",
                 style = MaterialTheme.typography.bodySmall,
             )
             if (s.hourlyRate != null || s.extras.isNotEmpty()) {
                 Text(
-                    "Pay ${Fmt.eur(Stats.totalPay(s, now))}" +
-                        (s.hourlyRate?.let { " · ${Fmt.duration(Stats.paidMs(s, now))} at ${Fmt.eur(it)}/h" } ?: ""),
+                    tr("Expected %s", Fmt.eur(Stats.totalPay(s, now))) +
+                        (s.hourlyRate?.let { " · " + tr("%s at %s/h", Fmt.duration(Stats.paidMs(s, now)), Fmt.eur(it)) } ?: "") +
+                        (if (Stats.overtimeMs(s, now) > 0) " · " + tr("overtime %s", Fmt.duration(Stats.overtimeMs(s, now))) else ""),
                     style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold,
+                )
+            }
+            Stats.invoiceDiff(s, now)?.let { d ->
+                Text(
+                    tr("Invoice %s (%s)", Fmt.eur(s.invoiceEuros ?: 0.0), Fmt.eurDiff(d)),
+                    style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold,
+                    color = if (d < -0.005) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
                 )
             }
             if (s.extras.isNotEmpty()) {
                 val meals = s.extras.count { it.type.isMeal }
-                val nights = s.extras.count { !it.type.isMeal }
+                val nights = s.extras.count { it.type.isSleepover }
                 Text(
-                    "$meals ${if (meals == 1) "meal" else "meals"} · $nights ${if (nights == 1) "sleepover" else "sleepovers"} · " +
-                        Fmt.eur(s.extras.sumOf { it.euros }),
+                    tr("%d meals · %d sleepovers · extras %s", meals, nights, Fmt.eur(Stats.extrasEuros(s))),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -362,22 +417,22 @@ private fun PermissionsCard() {
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Setup needed", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("So trips are recorded even with the screen off:", style = MaterialTheme.typography.bodySmall)
+            Text(tr("Setup needed"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(tr("So trips are recorded even with the screen off:"), style = MaterialTheme.typography.bodySmall)
             if (!fine) {
                 Button(onClick = {
                     val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
                     if (Build.VERSION.SDK_INT >= 33) perms += Manifest.permission.POST_NOTIFICATIONS
                     multi.launch(perms.toTypedArray())
-                }, Modifier.fillMaxWidth()) { Text("1. Allow location") }
+                }, Modifier.fillMaxWidth()) { Text(tr("1. Allow location")) }
             } else if (!bg) {
                 Button(onClick = { single.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }, Modifier.fillMaxWidth()) {
-                    Text("2. Location: choose \"Allow all the time\"")
+                    Text(tr("2. Location: choose \"Allow all the time\""))
                 }
             }
             if (fine && !notif && Build.VERSION.SDK_INT >= 33) {
                 Button(onClick = { single.launch(Manifest.permission.POST_NOTIFICATIONS) }, Modifier.fillMaxWidth()) {
-                    Text("Allow notifications")
+                    Text(tr("Allow notifications"))
                 }
             }
             if (!battery) {
@@ -392,8 +447,29 @@ private fun PermissionsCard() {
                         } catch (_: Exception) {
                         }
                     }
-                }, Modifier.fillMaxWidth()) { Text("Don't let the battery saver stop it") }
+                }, Modifier.fillMaxWidth()) { Text(tr("Don't let the battery saver stop it")) }
             }
+        }
+    }
+}
+
+@Composable
+private fun LimitsCard(sessions: List<Session>, now: Long) {
+    val st = Limits.status(sessions, now)
+    if (st.todayMs == 0L && st.weekMs == 0L) return
+    val warn = st.dailyOver || st.weeklyOver || st.fortnightOver || st.extendedTooOften
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (warn) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(tr("Driving limits (EU)"), fontWeight = FontWeight.Bold)
+            Text(tr("Today: %s of 9h (10h twice a week)", Fmt.duration(st.todayMs)), style = MaterialTheme.typography.bodyMedium)
+            Text(tr("This week: %s of 56h", Fmt.duration(st.weekMs)), style = MaterialTheme.typography.bodyMedium)
+            Text(tr("Two weeks: %s of 90h", Fmt.duration(st.fortnightMs)), style = MaterialTheme.typography.bodyMedium)
+            if (st.extendedTooOften) Text(tr("More than 2 days over 9h this week."), color = MaterialTheme.colorScheme.error)
+            Text(tr("Guide only — the tachograph is what counts."), style = MaterialTheme.typography.bodySmall)
         }
     }
 }

@@ -1,5 +1,11 @@
 package com.qcenaman.francesinha.ui
 
+import com.qcenaman.francesinha.logic.TaxCalc
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
+import com.qcenaman.francesinha.logic.tr
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +45,7 @@ import com.qcenaman.francesinha.data.Store
 import com.qcenaman.francesinha.logic.Fmt
 import com.qcenaman.francesinha.logic.Stats
 import com.qcenaman.francesinha.data.Prefs
+import com.qcenaman.francesinha.data.Receipts
 import com.qcenaman.francesinha.model.Extra
 import com.qcenaman.francesinha.model.ExtraType
 import com.qcenaman.francesinha.model.Pause
@@ -52,16 +59,14 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
     val initial = remember(id) {
         Store.get(id) ?: run {
             val now = System.currentTimeMillis()
-            Session(id = 0L, start = now - 3_600_000L, end = now, hourlyRate = Prefs.rate(ctx))
+            Prefs.newSessionDefaults(ctx, Session(id = 0L, start = now - 3_600_000L, end = now))
         }
     }
     var s by remember(id) { mutableStateOf(initial) }
     var odoStart by remember(id) { mutableStateOf(initial.odoStart?.let { Fmt.num(it) } ?: "") }
     var odoEnd by remember(id) { mutableStateOf(initial.odoEnd?.let { Fmt.num(it) } ?: "") }
     var manualKm by remember(id) { mutableStateOf(initial.manualKm?.let { Fmt.num(it) } ?: "") }
-    var rate by remember(id) {
-        mutableStateOf(initial.hourlyRate?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "")
-    }
+    var invoice by remember(id) { mutableStateOf(initial.invoiceEuros?.let { money(it) } ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     val now = rememberNow()
@@ -73,20 +78,21 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
     ) {
         OutlinedTextField(
             value = s.title, onValueChange = { s = s.copy(title = it) },
-            label = { Text("Route / load (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+            label = { Text(tr("Route / load (optional)")) }, modifier = Modifier.fillMaxWidth(), singleLine = true,
         )
+        ClientField(s.client) { s = s.copy(client = it) }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { pickDateTime(ctx, s.start) { s = s.copy(start = it) } }, Modifier.weight(1f)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Start", style = MaterialTheme.typography.labelSmall)
+                    Text(tr("Start"), style = MaterialTheme.typography.labelSmall)
                     Text(Fmt.dateTime(s.start))
                 }
             }
             OutlinedButton(onClick = { pickDateTime(ctx, s.end ?: now) { s = s.copy(end = it) } }, Modifier.weight(1f)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("End", style = MaterialTheme.typography.labelSmall)
-                    Text(s.end?.let { Fmt.dateTime(it) } ?: "Still running")
+                    Text(tr("End"), style = MaterialTheme.typography.labelSmall)
+                    Text(s.end?.let { Fmt.dateTime(it) } ?: tr("Still running"))
                 }
             }
         }
@@ -94,71 +100,63 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
         Card {
             Column(Modifier.padding(12.dp)) {
                 StatRow(
-                    "Driving" to Fmt.duration(Stats.drivingMs(s, now)),
-                    "Stops" to Fmt.duration(Stats.pauseMs(s, now)),
-                    "Total" to Fmt.duration(Stats.totalMs(s, now)),
+                    tr("Driving") to Fmt.duration(Stats.drivingMs(s, now)),
+                    tr("Stops") to Fmt.duration(Stats.pauseMs(s, now)),
+                    tr("Total") to Fmt.duration(Stats.totalMs(s, now)),
                 )
                 Spacer(Modifier.height(6.dp))
-                Text("GPS distance: ${Fmt.km(s.gpsMeters / 1000.0)}", style = MaterialTheme.typography.bodySmall)
+                Text(tr("GPS distance: %s", Fmt.km(s.gpsMeters / 1000.0)), style = MaterialTheme.typography.bodySmall)
             }
         }
 
-        Text("Pay", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        PayEditor(s, now) { s = it }
+
+        Text(tr("Invoice"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         OutlinedTextField(
-            value = rate,
+            value = invoice,
             onValueChange = {
-                rate = it
-                s = s.copy(hourlyRate = parseNum(it))
+                invoice = it
+                s = s.copy(invoiceEuros = parseNum(it))
             },
-            label = { Text("Pay per hour for this job (€)") },
+            label = { Text(tr("Final invoice amount (€)")) },
             modifier = Modifier.fillMaxWidth(), singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Breaks and rest are paid", modifier = Modifier.weight(1f))
-            Switch(checked = s.paidBreaks, onCheckedChange = { s = s.copy(paidBreaks = it) })
-        }
-        Card {
-            Column(Modifier.padding(12.dp)) {
-                StatRow(
-                    "Paid hours" to Fmt.duration(Stats.paidMs(s, now)),
-                    "Hours pay" to Fmt.eur(Stats.hourPay(s, now)),
-                    "Total pay" to Fmt.eur(Stats.totalPay(s, now)),
-                )
-            }
-        }
+        ComparisonCard(
+            planned = s.plannedEuros, expected = Stats.totalPay(s, now), invoice = s.invoiceEuros,
+        )
 
-        Text("Kilometres", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(tr("Kilometres"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
-                value = odoStart, onValueChange = { odoStart = it }, label = { Text("Odometer start") },
+                value = odoStart, onValueChange = { odoStart = it }, label = { Text(tr("Odometer start")) },
                 modifier = Modifier.weight(1f), singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             )
             OutlinedTextField(
-                value = odoEnd, onValueChange = { odoEnd = it }, label = { Text("Odometer end") },
+                value = odoEnd, onValueChange = { odoEnd = it }, label = { Text(tr("Odometer end")) },
                 modifier = Modifier.weight(1f), singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             )
         }
         OutlinedTextField(
             value = manualKm, onValueChange = { manualKm = it },
-            label = { Text("Km override (leave empty to use odometer / GPS)") },
+            label = { Text(tr("Km override (leave empty to use odometer / GPS)")) },
             modifier = Modifier.fillMaxWidth(), singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         )
 
         HorizontalDivider()
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Breaks and stops", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(tr("Breaks and stops"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(onClick = {
                 val sEnd = s.end ?: now
                 val start = maxOf(s.start, sEnd - 30 * 60_000L)
                 val end = minOf(start + 30 * 60_000L, sEnd)
                 s = s.copy(pauses = (s.pauses + Pause(Store.newId(), PauseType.BREAK, start, end)).sortedBy { it.start })
-            }) { Text("+ Add break") }
+            }) { Text(tr("+ Add break")) }
         }
-        if (s.pauses.isEmpty()) Text("No breaks.", style = MaterialTheme.typography.bodySmall)
+        if (s.pauses.isEmpty()) Text(tr("No breaks."), style = MaterialTheme.typography.bodySmall)
         s.pauses.forEach { p ->
             PauseEditor(
                 p = p, now = now,
@@ -168,39 +166,40 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
         }
 
         HorizontalDivider()
-        var mealMenu by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Meals & sleepovers (${Fmt.eur(s.extras.sumOf { it.euros })})",
+                tr("Meals, sleepovers & extras (%s)", Fmt.eur(Stats.extrasEuros(s, now))),
                 style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
             )
-            Box {
-                TextButton(onClick = { mealMenu = true }) { Text("+ Add ▾") }
-                DropdownMenu(expanded = mealMenu, onDismissRequest = { mealMenu = false }) {
-                    ExtraType.entries.forEach { t ->
-                        DropdownMenuItem(text = { Text(t.label) }, onClick = {
-                            mealMenu = false
-                            val time = minOf(maxOf(now, s.start), s.end ?: now)
-                            val e = Extra(Store.newId(), t, time, Prefs.euros(ctx, t))
-                            s = s.copy(extras = (s.extras + e).sortedBy { it.time })
-                        })
-                    }
-                }
+            AddExtraMenu(tr("+ Add ▾"), extraChoices(ctx)) { c ->
+                val time = minOf(maxOf(now, s.start), s.end ?: now)
+                s = s.copy(extras = (s.extras + c.make(time)).sortedBy { it.time })
             }
         }
-        if (s.extras.isEmpty()) Text("None.", style = MaterialTheme.typography.bodySmall)
+        if (s.extras.isEmpty()) {
+            Text(tr("Meals, sleepovers, prizes, supplements, discounts, custom items and expenses go here."), style = MaterialTheme.typography.bodySmall)
+        }
         s.extras.forEach { e ->
             ExtraEditor(
-                e = e,
+                e = e, value = Stats.extraValue(e, s, now),
                 onChange = { ne -> s = s.copy(extras = s.extras.map { if (it.id == e.id) ne else it }.sortedBy { it.time }) },
                 onDelete = { s = s.copy(extras = s.extras.filterNot { it.id == e.id }) },
             )
         }
+        if (Stats.expenseEuros(s) > 0) {
+            Text(
+                tr("Expenses %s (refunded %s)", Fmt.eur(Stats.expenseEuros(s)), Fmt.eur(Stats.refundedEuros(s))),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        HorizontalDivider()
+        PhotosSection(s.photos) { s = s.copy(photos = it) }
 
         HorizontalDivider()
         OutlinedTextField(
             value = s.notes, onValueChange = { s = s.copy(notes = it) },
-            label = { Text("Notes") }, modifier = Modifier.fillMaxWidth(), minLines = 3,
+            label = { Text(tr("Notes")) }, modifier = Modifier.fillMaxWidth(), minLines = 3,
         )
 
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -209,13 +208,13 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
             val sEnd = s.end
             val otherOpen = Store.openSession()?.let { it.id != s.id } ?: false
             val bad = when {
-                sEnd != null && sEnd < s.start -> "End must be after start."
-                sEnd == null && (isNew || otherOpen) -> "Set an end time (another trip is running)."
-                s.pauses.any { (it.end ?: now) < it.start } -> "A break ends before it starts."
+                sEnd != null && sEnd < s.start -> tr("End must be after start.")
+                sEnd == null && (isNew || otherOpen) -> tr("Set an end time (another trip is running).")
+                s.pauses.any { (it.end ?: now) < it.start } -> tr("A break ends before it starts.")
                 s.pauses.any { it.start < s.start || (sEnd != null && (it.end ?: sEnd) > sEnd) } ->
-                    "Breaks must be inside the trip times."
-                s.pauses.count { it.end == null } > 1 -> "Only one break can be running."
-                sEnd != null && s.pauses.any { it.end == null } -> "Set an end time for every break."
+                    tr("Breaks must be inside the trip times.")
+                s.pauses.count { it.end == null } > 1 -> tr("Only one break can be running.")
+                sEnd != null && s.pauses.any { it.end == null } -> tr("Set an end time for every break.")
                 else -> null
             }
             if (bad != null) {
@@ -227,25 +226,26 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
                 odoStart = parseNum(odoStart),
                 odoEnd = parseNum(odoEnd),
                 manualKm = parseNum(manualKm),
-                hourlyRate = parseNum(rate),
+                invoiceEuros = parseNum(invoice),
             )
             Store.upsert(saved)
+            if (saved.client.isNotBlank()) Prefs.setLastClient(ctx, saved.client)
             TrackingService.refresh(ctx)
             onDone()
-        }, Modifier.fillMaxWidth().height(52.dp)) { Text("Save") }
+        }, Modifier.fillMaxWidth().height(52.dp)) { Text(tr("Save")) }
 
-        OutlinedButton(onClick = onDone, Modifier.fillMaxWidth()) { Text("Cancel") }
+        OutlinedButton(onClick = onDone, Modifier.fillMaxWidth()) { Text(tr("Cancel")) }
 
         if (!isNew) {
             if (s.end != null) {
                 OutlinedButton(onClick = {
-                    if (Store.mergeWithPrevious(s.id)) onDone() else error = "No earlier trip to join."
-                }, Modifier.fillMaxWidth()) { Text("Join with previous trip") }
+                    if (Store.mergeWithPrevious(s.id)) onDone() else error = tr("No earlier trip to join.")
+                }, Modifier.fillMaxWidth()) { Text(tr("Join with previous trip")) }
             }
             OutlinedButton(
                 onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) { Text("Delete trip") }
+            ) { Text(tr("Delete trip")) }
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -253,17 +253,18 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete this trip?") },
-            text = { Text("This can't be undone.") },
+            title = { Text(tr("Delete this trip?")) },
+            text = { Text(tr("This can't be undone.")) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
+                    Store.get(id)?.photos?.forEach { Receipts.delete(ctx, it) }
                     Store.delete(id)
                     TrackingService.refresh(ctx)
                     onDone()
-                }) { Text("Delete") }
+                }) { Text(tr("Delete")) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Keep") } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(tr("Keep")) } },
         )
     }
 }
@@ -276,10 +277,10 @@ private fun PauseEditor(p: Pause, now: Long, onChange: (Pause) -> Unit, onDelete
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    TextButton(onClick = { menu = true }) { Text("${p.type.label} ▾") }
+                    TextButton(onClick = { menu = true }) { Text(tr(p.type.label) + " ▾") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         PauseType.entries.forEach { t ->
-                            DropdownMenuItem(text = { Text(t.label) }, onClick = {
+                            DropdownMenuItem(text = { Text(tr(t.label)) }, onClick = {
                                 menu = false
                                 onChange(p.copy(type = t))
                             })
@@ -287,63 +288,235 @@ private fun PauseEditor(p: Pause, now: Long, onChange: (Pause) -> Unit, onDelete
                     }
                 }
                 Text(Fmt.duration((p.end ?: now) - p.start), style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = onDelete) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDelete) { Text(tr("Remove"), color = MaterialTheme.colorScheme.error) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { pickDateTime(ctx, p.start) { onChange(p.copy(start = it)) } }, Modifier.weight(1f)) {
-                    Text("From ${Fmt.time(p.start)}")
+                    Text(tr("From %s", Fmt.time(p.start)))
                 }
                 OutlinedButton(onClick = { pickDateTime(ctx, p.end ?: now) { onChange(p.copy(end = it)) } }, Modifier.weight(1f)) {
-                    Text("To ${p.end?.let { Fmt.time(it) } ?: "now"}")
+                    Text(tr("To %s", p.end?.let { Fmt.time(it) } ?: tr("now")))
                 }
             }
             OutlinedTextField(
                 value = p.note, onValueChange = { onChange(p.copy(note = it)) },
-                label = { Text("Note") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text(tr("Note")) }, modifier = Modifier.fillMaxWidth(), singleLine = true,
             )
         }
     }
 }
 
+fun money(v: Double): String = String.format(java.util.Locale.US, "%.2f", v)
+
+/** Hourly rate, overtime, km, night/weekend/holiday and paid-breaks settings, with the resulting pay. */
 @Composable
-private fun ExtraEditor(e: Extra, onChange: (Extra) -> Unit, onDelete: () -> Unit) {
+fun PayEditor(s: Session, now: Long, onChange: (Session) -> Unit) {
     val ctx = LocalContext.current
-    var menu by remember { mutableStateOf(false) }
-    var eur by remember(e.id) { mutableStateOf(if (e.euros == 0.0) "" else String.format(java.util.Locale.US, "%.2f", e.euros)) }
-    Card {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) {
-                    TextButton(onClick = { menu = true }) { Text("${e.type.label} ▾") }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        ExtraType.entries.forEach { t ->
-                            DropdownMenuItem(text = { Text(t.label) }, onClick = {
-                                menu = false
-                                onChange(e.copy(type = t))
-                            })
-                        }
-                    }
-                }
-                TextButton(onClick = onDelete) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+    var rate by remember(s.id) { mutableStateOf(s.hourlyRate?.let { money(it) } ?: "") }
+    var otAfter by remember(s.id) { mutableStateOf(s.overtimeAfterMin?.let { Fmt.num(it / 60.0) } ?: "") }
+    var otRate by remember(s.id) { mutableStateOf(s.overtimeRate?.let { money(it) } ?: "") }
+    var perKm by remember(s.id) { mutableStateOf(s.perKmRate?.let { String.format(java.util.Locale.US, "%.3f", it) } ?: "") }
+    var night by remember(s.id) { mutableStateOf(s.nightPct?.let { Fmt.num(it) } ?: "") }
+    var weekend by remember(s.id) { mutableStateOf(s.weekendPct?.let { Fmt.num(it) } ?: "") }
+    var holiday by remember(s.id) { mutableStateOf(s.holidayPct?.let { Fmt.num(it) } ?: "") }
+    var more by remember { mutableStateOf(s.perKmRate != null || s.nightPct != null || s.weekendPct != null || s.holiday) }
+
+    @Composable
+    fun NumField(value: String, label: String, modifier: Modifier, set: (String) -> Unit) = OutlinedTextField(
+        value = value, onValueChange = set, label = { Text(label) }, modifier = modifier, singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+    )
+
+    Text(tr("Pay"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    NumField(rate, tr("Pay per hour for this job (€)"), Modifier.fillMaxWidth()) {
+        rate = it
+        onChange(s.copy(hourlyRate = parseNum(it)))
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        NumField(otAfter, tr("Overtime after (h)"), Modifier.weight(1f)) {
+            otAfter = it
+            onChange(s.copy(overtimeAfterMin = parseNum(it)?.takeIf { h -> h > 0 }?.let { h -> (h * 60).toInt() }))
+        }
+        NumField(otRate, tr("Overtime €/h"), Modifier.weight(1f)) {
+            otRate = it
+            onChange(s.copy(overtimeRate = parseNum(it)))
+        }
+    }
+    SwitchRow(tr("Breaks and rest are paid"), s.paidBreaks) { onChange(s.copy(paidBreaks = it)) }
+    SwitchRow(tr("More pay rules (km, night, weekend, holiday)"), more) { more = it }
+    if (more) {
+        NumField(perKm, tr("Pay per km (€)"), Modifier.fillMaxWidth()) {
+            perKm = it
+            onChange(s.copy(perKmRate = parseNum(it)))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            NumField(night, tr("Night +%% (%d–%d h)", s.nightFromHour, s.nightToHour), Modifier.weight(1f)) {
+                night = it
+                onChange(s.copy(nightPct = parseNum(it)))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { pickDateTime(ctx, e.time) { onChange(e.copy(time = it)) } }, Modifier.weight(1f)) {
-                    Text(Fmt.dateTime(e.time))
-                }
-                OutlinedTextField(
-                    value = eur,
-                    onValueChange = {
-                        eur = it
-                        onChange(e.copy(euros = parseNum(it) ?: 0.0))
-                    },
-                    label = { Text("€ pay") }, modifier = Modifier.weight(1f), singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            NumField(weekend, tr("Weekend +%"), Modifier.weight(1f)) {
+                weekend = it
+                onChange(s.copy(weekendPct = parseNum(it)))
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            NumField(holiday, tr("Holiday +%"), Modifier.weight(1f)) {
+                holiday = it
+                onChange(s.copy(holidayPct = parseNum(it)))
+            }
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(tr("Holiday"), modifier = Modifier.weight(1f))
+                Switch(checked = s.holiday, onCheckedChange = { onChange(s.copy(holiday = it)) })
+            }
+        }
+    }
+    val taxes = Prefs.taxes(ctx)
+    val gross = Stats.totalPay(s, now)
+    val taxable = Stats.taxable(s, now, Prefs.mealsTaxFree(ctx))
+    Card {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatRow(
+                tr("Paid hours") to Fmt.duration(Stats.paidMs(s, now)),
+                tr("Hours pay") to Fmt.eur(Stats.hourPay(s, now)),
+                tr("Overtime") to Fmt.eur(Stats.overtimePay(s, now)),
+            )
+            if (more) {
+                StatRow(
+                    tr("Km pay") to Fmt.eur(Stats.kmPay(s)),
+                    tr("Night/weekend") to Fmt.eur(Stats.supplementPay(s, now)),
+                    tr("Night hours") to Fmt.duration(Stats.nightMs(s, now)),
                 )
             }
-            OutlinedTextField(
-                value = e.note, onValueChange = { onChange(e.copy(note = it)) },
-                label = { Text("Note (place, receipt…)") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+            StatRow(
+                tr("Meals") to Fmt.eur(Stats.mealEuros(s)),
+                tr("Sleepovers") to Fmt.eur(Stats.sleepoverEuros(s)),
+                tr("Extras") to Fmt.eur(Stats.adjustEuros(s, now) + Stats.refundedEuros(s)),
             )
+            Text(
+                tr("Expected total: %s", Fmt.eur(gross)) +
+                    if (Stats.overtimeMs(s, now) > 0) "  " + tr("(incl. %s overtime)", Fmt.duration(Stats.overtimeMs(s, now))) else "",
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+            )
+            if (TaxCalc.percent(taxes) > 0) {
+                Text(
+                    tr("After tax ≈ %s (taxes %s)", Fmt.eur(TaxCalc.net(gross, taxable, taxes)), Fmt.eur(TaxCalc.amount(taxable, taxes))),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+/** Client / employer with quick picks from earlier trips. */
+@Composable
+fun ClientField(value: String, onChange: (String) -> Unit) {
+    val known = Store.sessions.value.map { it.client }.filter { it.isNotBlank() }.distinct().take(8)
+    var open by remember { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = value, onValueChange = onChange, label = { Text(tr("Client / employer")) },
+            modifier = Modifier.weight(1f), singleLine = true,
+        )
+        if (known.isNotEmpty()) {
+            Box {
+                TextButton(onClick = { open = true }) { Text("▾") }
+                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    known.forEach { c -> DropdownMenuItem(text = { Text(c) }, onClick = { open = false; onChange(c) }) }
+                }
+            }
+        }
+    }
+}
+
+/** Receipt / invoice photos: take one, pick one, view, remove. */
+@Composable
+fun PhotosSection(photos: List<String>, onChange: (List<String>) -> Unit) {
+    val ctx = LocalContext.current
+    var pending by remember { mutableStateOf<String?>(null) }
+    val take = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicture(),
+    ) { ok ->
+        val n = pending
+        if (ok && n != null) onChange(photos + n) else n?.let { Receipts.delete(ctx, it) }
+        pending = null
+    }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+    ) { uri -> uri?.let { Receipts.copyIn(ctx, it) }?.let { onChange(photos + it) } }
+
+    Text(tr("Receipts and invoices"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = {
+            val f = Receipts.newFile(ctx)
+            pending = f.name
+            try {
+                take.launch(Receipts.uri(ctx, f))
+            } catch (_: Exception) {
+                pending = null
+            }
+        }, Modifier.weight(1f)) { Text(tr("Take photo")) }
+        OutlinedButton(onClick = {
+            try {
+                pick.launch("image/*")
+            } catch (_: Exception) {
+            }
+        }, Modifier.weight(1f)) { Text(tr("Choose photo")) }
+    }
+    if (photos.isNotEmpty()) {
+        Row(
+            Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            photos.forEach { name ->
+                val bmp = remember(name) { Receipts.thumbnail(ctx, name) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (bmp != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = bmp.asImageBitmap(), contentDescription = null,
+                            modifier = Modifier.size(96.dp).clickable {
+                                try {
+                                    ctx.startActivity(
+                                        android.content.Intent(android.content.Intent.ACTION_VIEW)
+                                            .setDataAndType(Receipts.uri(ctx, Receipts.file(ctx, name)), "image/*")
+                                            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION),
+                                    )
+                                } catch (_: Exception) {
+                                }
+                            },
+                        )
+                    }
+                    TextButton(onClick = {
+                        Receipts.delete(ctx, name)
+                        onChange(photos - name)
+                    }) { Text(tr("Remove"), color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        }
+    }
+}
+
+/** Planned vs expected (calculated) vs invoiced amounts. */
+@Composable
+fun ComparisonCard(planned: Double?, expected: Double, invoice: Double?) {
+    if (planned == null && invoice == null) return
+    Card {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            planned?.let { Text(tr("Planned: %s", Fmt.eur(it))) }
+            Text(tr("Expected (from this trip): %s", Fmt.eur(expected)))
+            if (invoice != null) {
+                Text(tr("Invoice: %s", Fmt.eur(invoice)))
+                val d = invoice - expected
+                Text(
+                    when {
+                        d > 0.005 -> tr("Invoice is %s more than expected", Fmt.eur(d))
+                        d < -0.005 -> tr("Invoice is %s LESS than expected", Fmt.eur(-d))
+                        else -> tr("Invoice matches what was expected")
+                    },
+                    fontWeight = FontWeight.Bold,
+                    color = if (d < -0.005) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+                )
+                planned?.let { Text(tr("vs plan: %s", Fmt.eurDiff(invoice - it)), style = MaterialTheme.typography.bodySmall) }
+            }
         }
     }
 }

@@ -97,6 +97,6 @@ class StatsTest {
     fun csvHasOneRowPerTrip() {
         val csv = Csv.export(listOf(trip, trip.copy(id = 2, start = h)), 0)
         assertEquals(3, csv.trim().lines().size)
-        assertTrue(csv.lines()[0].contains("total_pay_eur"))
+        assertTrue(csv.lines()[0].contains("expected_pay_eur"))
     }
 }

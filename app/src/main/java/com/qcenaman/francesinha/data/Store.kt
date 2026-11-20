@@ -56,9 +56,12 @@ object Store {
     private fun updateOpen(block: (Session) -> Session) =
         update { list -> list.map { if (it.end == null) block(it) else it } }
 
-    fun startSession(time: Long, auto: Boolean, lat: Double? = null, lon: Double? = null, rate: Double? = null) {
+    fun startSession(
+        time: Long, auto: Boolean, lat: Double? = null, lon: Double? = null,
+        prepare: (Session) -> Session = { it },
+    ) {
         if (openSession() != null) return
-        val s = Session(id = newId(), start = time, auto = auto, startLat = lat, startLon = lon, hourlyRate = rate)
+        val s = prepare(Session(id = newId(), start = time, auto = auto, startLat = lat, startLon = lon))
         update { it + s }
     }
 
@@ -71,9 +74,10 @@ object Store {
     }
 
     /** Adds a meal / sleepover to the running trip, or else the most recent trip. */
-    fun addExtra(type: ExtraType, time: Long, euros: Double): Boolean {
+    fun addExtra(type: ExtraType, time: Long, euros: Double): Boolean = addExtraItem(Extra(newId(), type, time, euros))
+
+    fun addExtraItem(e: Extra): Boolean {
         val target = openSession() ?: _sessions.value.maxByOrNull { it.start } ?: return false
-        val e = Extra(newId(), type, time, euros)
         update { list -> list.map { if (it.id == target.id) SessionOps.addExtra(it, e) else it } }
         return true
     }
