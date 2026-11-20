@@ -1,0 +1,304 @@
+package com.qcenaman.francesinha.service
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import com.qcenaman.francesinha.R
+import com.qcenaman.francesinha.data.Config
+import com.qcenaman.francesinha.data.Prefs
+import com.qcenaman.francesinha.data.Store
+import com.qcenaman.francesinha.logic.DetectorEvent
+import com.qcenaman.francesinha.logic.Fix
+import com.qcenaman.francesinha.logic.Fmt
+import com.qcenaman.francesinha.logic.Phase
+import com.qcenaman.francesinha.logic.Stats
+import com.qcenaman.francesinha.logic.TripDetector
+import com.qcenaman.francesinha.model.PauseType
+import com.qcenaman.francesinha.ui.MainActivity
+
+class TrackingService : Service(), LocationListener {
+
+    companion object {
+        private const val CH_TRACK = "tracking"
+        private const val CH_ALERT = "alerts"
+        private const val NOTIF_ID = 1
+        private const val ALERT_ID = 2
+        const val EXTRA_MANUAL_END = "manualEnd"
+
+        fun hasLocation(ctx: Context) = ContextCompat.checkSelfPermission(
+            ctx, Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+
+        fun shouldRun(ctx: Context): Boolean =
+            hasLocation(ctx) && (Prefs.load(ctx).autoDetect || Store.openSession() != null)
+
+        /** Start, resync or stop the service to match settings and stored state. */
+        fun refresh(ctx: Context, manualEnd: Boolean = false) {
+            Store.init(ctx)
+            val i = Intent(ctx, TrackingService::class.java).putExtra(EXTRA_MANUAL_END, manualEnd)
+            if (shouldRun(ctx)) {
+                try {
+                    ContextCompat.startForegroundService(ctx, i)
+                } catch (_: Exception) {
+                }
+            } else {
+                ctx.stopService(i)
+            }
+        }
+    }
+
+    private val detector = TripDetector()
+    private lateinit var lm: LocationManager
+    private val handler = Handler(Looper.getMainLooper())
+    private var listening = false
+    private var cfg = Config()
+    private var pendingMeters = 0.0
+    private var suppressAutoStartUntil = 0L
+    private var lastAlertKey: Long? = null
+    private var lastFixAt = 0L
+
+    private val tick = object : Runnable {
+        override fun run() {
+            handle(detector.onTick(System.currentTimeMillis()))
+            flushDistance()
+            updateNotification()
+            handler.postDelayed(this, 30_000)
+        }
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        Store.init(this)
+        lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        createChannels()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Store.init(this)
+        if (!goForeground()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!shouldRun(this)) {
+            stopNow()
+            return START_NOT_STICKY
+        }
+        if (intent?.getBooleanExtra(EXTRA_MANUAL_END, false) == true) {
+            suppressAutoStartUntil = System.currentTimeMillis() + 10 * 60_000L
+        }
+        cfg = Prefs.load(this)
+        detector.config = cfg.detector()
+        syncDetector()
+        startListening()
+        handler.removeCallbacks(tick)
+        handler.post(tick)
+        return START_STICKY
+    }
+
+    private fun goForeground(): Boolean = try {
+        val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+        ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(), type)
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startListening() {
+        if (listening || !hasLocation(this)) return
+        try {
+            lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5_000L, 0f, this, Looper.getMainLooper())
+            listening = true
+        } catch (_: SecurityException) {
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    private fun stopNow() {
+        flushDistance()
+        handler.removeCallbacks(tick)
+        if (listening) {
+            lm.removeUpdates(this)
+            listening = false
+        }
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        flushDistance()
+        handler.removeCallbacks(tick)
+        if (listening) lm.removeUpdates(this)
+        listening = false
+        super.onDestroy()
+    }
+
+    override fun onLocationChanged(location: Location) {
+        lastFixAt = System.currentTimeMillis()
+        val fix = Fix(
+            time = lastFixAt,
+            lat = location.latitude,
+            lon = location.longitude,
+            speedMps = if (location.hasSpeed()) location.speed else null,
+            accuracy = if (location.hasAccuracy()) location.accuracy else null,
+        )
+        handle(detector.onFix(fix))
+    }
+
+    override fun onProviderEnabled(provider: String) {}
+    override fun onProviderDisabled(provider: String) { updateNotification() }
+
+    @Deprecated("Deprecated in Java")
+    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+
+    private fun syncDetector() {
+        val s = Store.openSession()
+        if (s == null) {
+            detector.sync(Phase.IDLE, null)
+        } else {
+            val p = s.openPause
+            if (p == null) detector.sync(Phase.DRIVING, null) else detector.sync(Phase.STOPPED, p.start, p.auto)
+        }
+    }
+
+    private fun flushDistance() {
+        if (pendingMeters > 0) {
+            Store.addDistance(pendingMeters)
+            pendingMeters = 0.0
+        }
+    }
+
+    private fun handle(events: List<DetectorEvent>) {
+        if (events.isEmpty()) return
+        val auto = cfg.autoDetect
+        var changed = false
+        for (e in events) {
+            when (e) {
+                is DetectorEvent.Distance -> {
+                    if (Store.openSession() != null) pendingMeters += e.meters
+                    if (pendingMeters >= 250) flushDistance()
+                }
+                is DetectorEvent.SessionStarted -> if (auto && Store.openSession() == null &&
+                    System.currentTimeMillis() >= suppressAutoStartUntil
+                ) {
+                    pendingMeters = 0.0
+                    Store.startSession(e.time, true, e.lat, e.lon, Prefs.rate(this))
+                    changed = true
+                }
+                is DetectorEvent.PauseStarted -> if (auto) {
+                    flushDistance()
+                    Store.startPause(e.time, PauseType.BREAK, auto = true)
+                    changed = true
+                }
+                is DetectorEvent.PauseEnded -> if (auto) {
+                    Store.endPause(e.time)
+                    changed = true
+                }
+                is DetectorEvent.SessionEnded -> if (auto) {
+                    flushDistance()
+                    Store.endSession(e.time, e.lat, e.lon, trimAutoPause = true)
+                    changed = true
+                }
+            }
+        }
+        syncDetector()
+        if (changed) {
+            updateNotification()
+            if (!shouldRun(this)) stopNow()
+        }
+        checkAlert()
+    }
+
+    private fun checkAlert() {
+        if (!cfg.alertsOn) return
+        val s = Store.openSession() ?: return
+        val now = System.currentTimeMillis()
+        val cont = Stats.continuousDrivingMs(s, now)
+        if (cont < cfg.driveAlertMin * 60_000L) return
+        val key = s.id * 31 + (s.pauses.maxOfOrNull { it.end ?: 0L } ?: 0L)
+        if (key == lastAlertKey) return
+        lastAlertKey = key
+        val n = NotificationCompat.Builder(this, CH_ALERT)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Time for a break")
+            .setContentText("You've been driving ${Fmt.duration(cont)} without a proper break.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(openAppIntent())
+            .setAutoCancel(true)
+            .build()
+        notify(ALERT_ID, n)
+    }
+
+    private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
+        this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    private fun statusText(): Pair<String, String> {
+        val s = Store.openSession()
+        val now = System.currentTimeMillis()
+        val gpsOff = try { !lm.isProviderEnabled(LocationManager.GPS_PROVIDER) } catch (_: Exception) { false }
+        if (gpsOff) return "GPS is off" to "Turn on Location so trips can be recorded"
+        if (s == null) return "Waiting for driving" to "A trip starts automatically when you drive"
+        val km = s.km() + pendingMeters / 1000.0
+        val p = s.openPause
+        return if (p != null) {
+            "${p.type.label} since ${Fmt.time(p.start)}" to "Driving ${Fmt.duration(Stats.drivingMs(s, now))} · ${Fmt.km(km)}"
+        } else {
+            "Driving · ${Fmt.duration(Stats.drivingMs(s, now))}" to "${Fmt.km(km)} · started ${Fmt.time(s.start)}"
+        }
+    }
+
+    private fun buildNotification(): Notification {
+        val (title, text) = statusText()
+        return NotificationCompat.Builder(this, CH_TRACK)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setContentIntent(openAppIntent())
+            .build()
+    }
+
+    private fun updateNotification() = notify(NOTIF_ID, buildNotification())
+
+    private fun notify(id: Int, n: Notification) {
+        try {
+            getSystemService(NotificationManager::class.java).notify(id, n)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun createChannels() {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(CH_TRACK, "Trip tracking", NotificationManager.IMPORTANCE_LOW),
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CH_ALERT, "Driving time alerts", NotificationManager.IMPORTANCE_HIGH),
+        )
+    }
+}
