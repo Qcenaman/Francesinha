@@ -159,6 +159,7 @@ fun SettingsScreen(modifier: Modifier) {
                 }
             }
         }
+        RouteCard()
         PayRulesCard()
         TaxesCard()
         PresetsCard()
@@ -422,5 +423,56 @@ private fun BackupCard() {
             },
             dismissButton = { androidx.compose.material3.TextButton(onClick = { pending = null }) { Text(tr("Cancel")) } },
         )
+    }
+}
+
+@Composable
+private fun RouteCard() {
+    val ctx = LocalContext.current
+    var key by remember { mutableStateOf(Prefs.orsKey(ctx)) }
+    var hazmat by remember { mutableStateOf(Prefs.truck(ctx).hazmat) }
+    val truck = Prefs.truck(ctx)
+    Card {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr("Truck and route planning"), fontWeight = FontWeight.Bold)
+            Text(
+                tr("Routes avoid roads the truck can't use (height, weight, no-truck roads) where OpenStreetMap has that data. Always follow the road signs."),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MoneyField(tr("Height (m)"), truck.height, Modifier.weight(1f), 2) { Prefs.setNum(ctx, "truckHeight", it) }
+                MoneyField(tr("Width (m)"), truck.width, Modifier.weight(1f), 2) { Prefs.setNum(ctx, "truckWidth", it) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MoneyField(tr("Length (m)"), truck.length, Modifier.weight(1f), 2) { Prefs.setNum(ctx, "truckLength", it) }
+                MoneyField(tr("Weight (t)"), truck.weight, Modifier.weight(1f), 1) { Prefs.setNum(ctx, "truckWeight", it) }
+            }
+            MoneyField(tr("Axle load (t)"), truck.axleLoad, Modifier.fillMaxWidth(), 1) { Prefs.setNum(ctx, "truckAxle", it) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(tr("Dangerous goods (ADR)"), modifier = Modifier.weight(1f))
+                Switch(checked = hazmat, onCheckedChange = {
+                    hazmat = it
+                    Prefs.setHazmat(ctx, it)
+                })
+            }
+            OutlinedTextField(
+                value = key,
+                onValueChange = {
+                    key = it
+                    Prefs.setOrsKey(ctx, it)
+                },
+                label = { Text(tr("Free route key (openrouteservice)")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                tr("Get it free at account.heigit.org (sign up → API keys → Standard). Up to 2,000 routes a day."),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            androidx.compose.material3.TextButton(onClick = {
+                try {
+                    ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://account.heigit.org")))
+                } catch (_: Exception) {
+                }
+            }) { Text(tr("Open account.heigit.org")) }
+        }
     }
 }

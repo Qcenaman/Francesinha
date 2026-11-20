@@ -68,9 +68,9 @@ object Store {
     fun endSession(time: Long, lat: Double? = null, lon: Double? = null, trimAutoPause: Boolean = false) =
         updateOpen { SessionOps.close(it, time, lat, lon, trimAutoPause) }
 
-    fun startPause(time: Long, type: PauseType, auto: Boolean) {
+    fun startPause(time: Long, type: PauseType, auto: Boolean, lat: Double? = LastFix.lat, lon: Double? = LastFix.lon) {
         val id = newId()
-        updateOpen { SessionOps.startPause(it, Pause(id, type, time, null, "", auto)) }
+        updateOpen { SessionOps.startPause(it, Pause(id, type, time, null, "", auto, lat, lon)) }
     }
 
     /** Adds a meal / sleepover to the running trip, or else the most recent trip. */
@@ -100,14 +100,17 @@ object Store {
 
     fun mergeWithPrevious(id: Long): Boolean {
         var ok = false
+        var merged: Pair<Long, Long>? = null
         val gapId = newId()
         update { list ->
             val cur = list.firstOrNull { it.id == id } ?: return@update list
             val prev = list.filter { it.id != id && it.end != null && it.start < cur.start }
                 .maxByOrNull { it.start } ?: return@update list
             ok = true
+            merged = prev.id to cur.id
             list.filter { it.id != prev.id && it.id != cur.id } + SessionOps.merge(prev, cur, gapId)
         }
+        merged?.let { (keep, gone) -> TrackStore.merge(keep, gone) }
         return ok
     }
 }

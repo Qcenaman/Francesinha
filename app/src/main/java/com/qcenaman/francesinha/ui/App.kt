@@ -43,6 +43,7 @@ sealed class Screen {
     data object Settings : Screen()
     data class Edit(val id: Long) : Screen()
     data class PlanEdit(val id: Long) : Screen()
+    data class TripMap(val id: Long) : Screen()
 }
 
 @Composable
@@ -67,6 +68,7 @@ fun App() {
         Screen.Home -> "Francesinha"
         Screen.Planner -> tr("Planner")
         is Screen.PlanEdit -> if (s.id == 0L) tr("New plan") else tr("Edit plan")
+        is Screen.TripMap -> tr("Map")
         Screen.Summary -> tr("Summary")
         Screen.Settings -> tr("Settings")
         is Screen.Edit -> if (s.id == 0L) tr("New trip") else tr("Edit trip")
@@ -83,7 +85,7 @@ fun App() {
             )
         },
         bottomBar = {
-            if (screen !is Screen.Edit && screen !is Screen.PlanEdit) {
+            if (screen !is Screen.Edit && screen !is Screen.PlanEdit && screen !is Screen.TripMap) {
                 NavigationBar {
                     NavigationBarItem(
                         selected = screen == Screen.Home, onClick = { screen = Screen.Home },
@@ -107,7 +109,8 @@ fun App() {
     ) { pad ->
         val m = Modifier.padding(pad)
         when (val s = screen) {
-            Screen.Home -> HomeScreen(m, onEdit = { screen = Screen.Edit(it) })
+            Screen.Home -> HomeScreen(m, onEdit = { screen = Screen.Edit(it) }, onMap = { screen = Screen.TripMap(it) })
+            is Screen.TripMap -> TripMapScreen(m, s.id)
             Screen.Planner -> PlannerScreen(m, onEdit = { screen = Screen.PlanEdit(it) })
             is Screen.PlanEdit -> PlanEditScreen(m, s.id, onDone = { screen = Screen.Planner })
             Screen.Summary -> SummaryScreen(m)

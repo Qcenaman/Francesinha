@@ -52,6 +52,7 @@ object Backup {
             put("plans.json", Codec.encodePlans(PlanStore.plans.value).toByteArray())
             put("settings.json", Prefs.exportAll(ctx).toString().toByteArray())
             Receipts.dir(ctx).listFiles()?.forEach { f -> put("receipts/" + f.name, f.readBytes()) }
+            TrackStore.folder(ctx).listFiles()?.forEach { f -> put("tracks/" + f.name, f.readBytes()) }
         }
         return out
     }
@@ -62,6 +63,7 @@ object Backup {
         var plans: String? = null
         var settings: String? = null
         val photos = mutableMapOf<String, ByteArray>()
+        val tracks = mutableMapOf<String, ByteArray>()
         ZipInputStream(ctx.contentResolver.openInputStream(src)!!).use { z ->
             while (true) {
                 val e = z.nextEntry ?: break
@@ -71,6 +73,7 @@ object Backup {
                     e.name == "plans.json" -> plans = String(bytes)
                     e.name == "settings.json" -> settings = String(bytes)
                     e.name.startsWith("receipts/") && !e.name.contains("..") -> photos[e.name.removePrefix("receipts/")] = bytes
+                    e.name.startsWith("tracks/") && !e.name.contains("..") -> tracks[e.name.removePrefix("tracks/")] = bytes
                 }
             }
         }
@@ -79,6 +82,7 @@ object Backup {
         plans?.let { p -> val pl = Codec.decodePlans(p); PlanStore.replaceAll(pl) }
         settings?.let { Prefs.importAll(ctx, JSONObject(it)) }
         photos.forEach { (name, bytes) -> if (name.isNotBlank() && !name.contains('/')) Receipts.file(ctx, name).writeBytes(bytes) }
+        tracks.forEach { (name, bytes) -> if (name.isNotBlank() && !name.contains('/')) java.io.File(TrackStore.folder(ctx), name).writeBytes(bytes) }
         list.size
     }.getOrNull()
 }

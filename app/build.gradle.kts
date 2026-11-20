@@ -12,8 +12,8 @@ android {
         applicationId = "com.qcenaman.francesinha"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     signingConfigs {
@@ -45,6 +45,7 @@ android {
     lint {
         abortOnError = false
         checkReleaseBuilds = false
+        xmlReport = true
     }
 }
 
@@ -57,6 +58,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
+    implementation("org.maplibre.gl:android-sdk:11.8.2")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

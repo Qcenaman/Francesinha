@@ -46,6 +46,7 @@ object PlanCalc {
             perKmRate = plan.perKmRate, nightPct = plan.nightPct, weekendPct = plan.weekendPct,
             holidayPct = plan.holidayPct, holiday = plan.holiday,
             nightFromHour = plan.nightFromHour, nightToHour = plan.nightToHour, client = plan.client,
+            destName = plan.toName, destLat = plan.toLat, destLon = plan.toLon, route = plan.route,
         )
     }
 

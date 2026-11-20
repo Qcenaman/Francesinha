@@ -37,4 +37,14 @@ data class Plan(
     val nightFromHour: Int = 22,
     val nightToHour: Int = 7,
     val client: String = "",
+    val fromName: String = "",
+    val fromLat: Double? = null,
+    val fromLon: Double? = null,
+    val toName: String = "",
+    val toLat: Double? = null,
+    val toLon: Double? = null,
+    /** Truck route result: km, driving minutes, encoded line "lat,lon;…". */
+    val routeKm: Double? = null,
+    val routeMin: Int? = null,
+    val route: String = "",
 )

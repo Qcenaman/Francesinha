@@ -14,6 +14,7 @@ class MainActivity : ComponentActivity() {
         UiLang.lang = com.qcenaman.francesinha.logic.I18n.lang
         Store.init(this)
         PlanStore.init(this)
+        com.qcenaman.francesinha.data.TrackStore.init(this)
         setContent { FrancesinhaTheme { App() } }
     }
 

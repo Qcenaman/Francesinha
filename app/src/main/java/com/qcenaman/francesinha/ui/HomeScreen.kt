@@ -66,7 +66,7 @@ private fun granted(ctx: Context, p: String) =
     ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
 
 @Composable
-fun HomeScreen(modifier: Modifier, onEdit: (Long) -> Unit) {
+fun HomeScreen(modifier: Modifier, onEdit: (Long) -> Unit, onMap: (Long) -> Unit = {}) {
     val ctx = LocalContext.current
     val sessions by Store.sessions.collectAsState()
     val now = rememberNow()
@@ -83,7 +83,7 @@ fun HomeScreen(modifier: Modifier, onEdit: (Long) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { PermissionsCard() }
-        item { StatusCard(open, now) }
+        item { StatusCard(open, now, onMap) }
         item { LimitsCard(sessions, now) }
         item {
             Card {
@@ -159,7 +159,7 @@ fun HomeScreen(modifier: Modifier, onEdit: (Long) -> Unit) {
 }
 
 @Composable
-private fun StatusCard(open: Session?, now: Long) {
+private fun StatusCard(open: Session?, now: Long, onMap: (Long) -> Unit) {
     val ctx = LocalContext.current
     var typeMenu by remember { mutableStateOf(false) }
     val pause = open?.openPause
@@ -198,6 +198,14 @@ private fun StatusCard(open: Session?, now: Long) {
                             (open.hourlyRate?.let { " (${Fmt.eur(it)}/h)" } ?: ""),
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { onMap(open.id) }, Modifier.weight(1f)) { Text(tr("Map")) }
+                    val dest = open.destLat?.let { a -> open.destLon?.let { com.qcenaman.francesinha.logic.LatLon(a, it) } }
+                    if (dest != null) {
+                        OutlinedButton(onClick = { openNavigation(ctx, dest, open.destName) }, Modifier.weight(1f)) { Text(tr("Navigate")) }
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -258,27 +266,22 @@ private fun ExtrasQuickCard(hasTrips: Boolean, open: Boolean) {
     var dialog by remember { mutableStateOf<ExtraType?>(null) }
     var msg by remember { mutableStateOf<String?>(null) }
     fun addItem(e: com.qcenaman.francesinha.model.Extra) {
-        msg = if (Store.addExtraItem(e)) {
+        val here = com.qcenaman.francesinha.data.LastFix.fresh()
+        msg = if (Store.addExtraItem(if (here != null && e.lat == null) e.copy(lat = here.lat, lon = here.lon) else e)) {
             val v = if (e.percent != null) Fmt.num(e.percent) + "%" else Fmt.eur(if (e.type == ExtraType.CUSTOM && e.deduct) -e.euros else e.type.sign * e.euros)
             tr(if (open) "%s (%s) added to this trip" else "%s (%s) added to the last trip", e.name.ifBlank { tr(e.type.label) }, v)
         } else {
             tr("Start or add a trip first")
         }
     }
+    fun add(t: ExtraType) = addItem(com.qcenaman.francesinha.model.Extra(Store.newId(), t, System.currentTimeMillis(), Prefs.euros(ctx, t)))
     dialog?.let { t ->
         QuickExtraDialog(t, onDismiss = { dialog = null }) { e ->
             dialog = null
             addItem(e)
         }
     }
-    fun add(t: ExtraType) {
-        val eur = Prefs.euros(ctx, t)
-        msg = if (Store.addExtra(t, System.currentTimeMillis(), eur)) {
-            tr(if (open) "%s (%s) added to this trip" else "%s (%s) added to the last trip", tr(t.label), Fmt.eur(t.sign * eur))
-        } else {
-            tr("Start or add a trip first")
-        }
-    }
+
     Card {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text(tr("Meals, sleepovers & extras"), fontWeight = FontWeight.Bold)

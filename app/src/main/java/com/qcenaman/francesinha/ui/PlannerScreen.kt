@@ -1,5 +1,8 @@
 package com.qcenaman.francesinha.ui
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import com.qcenaman.francesinha.logic.tr
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -116,6 +119,20 @@ fun PlanEditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
     val s = PlanCalc.toSession(p)
     val end = s.end ?: s.start
     val starts = PlanCalc.stepStarts(p)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var routing by remember { mutableStateOf(false) }
+    var routeError by remember { mutableStateOf<String?>(null) }
+    var showMap by remember { mutableStateOf(false) }
+    var askReplace by remember { mutableStateOf(false) }
+
+    if (showMap) {
+        androidx.activity.compose.BackHandler { showMap = false }
+        Column(modifier.fillMaxWidth()) {
+            TextButton(onClick = { showMap = false }) { Text(tr("Close map")) }
+            TruckMap(planMapData(p), Modifier.fillMaxWidth().weight(1f))
+        }
+        return
+    }
     fun savedPlan() = if (p.id == 0L) p.copy(id = Store.newId()).also { p = it } else p
     fun addStep(st: PlanStep) { p = p.copy(steps = p.steps + st) }
 
@@ -128,6 +145,71 @@ fun PlanEditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
             label = { Text(tr("Plan name / route")) }, modifier = Modifier.fillMaxWidth(), singleLine = true,
         )
         ClientField(p.client) { p = p.copy(client = it) }
+
+        Card {
+            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(tr("Truck route"), fontWeight = FontWeight.Bold)
+                PlaceField(tr("From"), p.fromName, allowMyLocation = true) { pl ->
+                    p = p.copy(fromName = pl.name, fromLat = pl.lat, fromLon = pl.lon)
+                }
+                PlaceField(tr("To"), p.toName, allowMyLocation = false) { pl ->
+                    p = p.copy(toName = pl.name, toLat = pl.lat, toLon = pl.lon, name = p.name.ifBlank { pl.name })
+                }
+                val from = p.fromLat?.let { a -> p.fromLon?.let { com.qcenaman.francesinha.logic.LatLon(a, it) } }
+                val to = p.toLat?.let { a -> p.toLon?.let { com.qcenaman.francesinha.logic.LatLon(a, it) } }
+                if (routing) {
+                    androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else {
+                    Button(onClick = {
+                        val key = Prefs.orsKey(ctx)
+                        if (key.isBlank()) {
+                            routeError = tr("Add your free route key in Settings first.")
+                            return@Button
+                        }
+                        if (from == null || to == null) {
+                            routeError = tr("Pick the departure and the destination first.")
+                            return@Button
+                        }
+                        routing = true
+                        routeError = null
+                        val truck = Prefs.truck(ctx)
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) {
+                                runCatching { com.qcenaman.francesinha.data.Ors.route(key, from, to, truck, com.qcenaman.francesinha.logic.I18n.lang.code) }
+                            }
+                            routing = false
+                            r.onSuccess { rt ->
+                                p = p.copy(
+                                    routeKm = Math.round(rt.km * 10) / 10.0, routeMin = rt.minutes,
+                                    route = com.qcenaman.francesinha.logic.RouteLine.encode(com.qcenaman.francesinha.logic.RouteLine.thin(rt.points)),
+                                )
+                                askReplace = true
+                            }.onFailure { e -> routeError = orsErrorText((e as? com.qcenaman.francesinha.data.Ors.OrsError)?.reason) }
+                        }
+                    }, Modifier.fillMaxWidth(), enabled = from != null && to != null) { Text(tr("Calculate truck route")) }
+                }
+                routeError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                val rkm = p.routeKm
+                val rmin = p.routeMin
+                if (rkm != null && rmin != null) {
+                    Text(tr("Truck route: %s · %s driving", Fmt.km(rkm), Fmt.duration(rmin * 60_000L)), fontWeight = FontWeight.Bold)
+                    TruckMap(planMapData(p), Modifier.fillMaxWidth().height(200.dp), interactive = false)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { showMap = true }, Modifier.weight(1f)) { Text(tr("Map")) }
+                        OutlinedButton(onClick = { askReplace = true }, Modifier.weight(1f)) { Text(tr("Fill steps")) }
+                    }
+                    if (to != null) {
+                        OutlinedButton(onClick = { openNavigation(ctx, to, p.toName) }, Modifier.fillMaxWidth()) {
+                            Text(tr("Navigate in OsmAnd"))
+                        }
+                    }
+                }
+                Text(
+                    tr("Truck rules use the size and weight set in Settings. Map data © OpenStreetMap; route by openrouteservice."),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
         OutlinedButton(onClick = { pickDateTime(ctx, p.start) { p = p.copy(start = it) } }, Modifier.fillMaxWidth()) {
             Text(tr("Starts: %s", Fmt.dateTime(p.start)))
         }
@@ -227,6 +309,23 @@ fun PlanEditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
         }
         OutlinedButton(onClick = onDone, Modifier.fillMaxWidth()) { Text(tr("Back")) }
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (askReplace) {
+        AlertDialog(
+            onDismissRequest = { askReplace = false },
+            title = { Text(tr("Fill the steps from the route?")) },
+            text = { Text(tr("Driving stretches, a 45 min break every 4h30 and an 11h rest with sleepover after 9h of driving. This replaces the current steps.")) },
+            confirmButton = {
+                TextButton(onClick = {
+                    askReplace = false
+                    val km = p.routeKm ?: 0.0
+                    val min = p.routeMin ?: 0
+                    p = p.copy(steps = com.qcenaman.francesinha.logic.RoutePlan.steps(km, min, { Store.newId() }, Prefs.euros(ctx, ExtraType.SLEEPOVER)))
+                }) { Text(tr("Fill steps")) }
+            },
+            dismissButton = { TextButton(onClick = { askReplace = false }) { Text(tr("Keep my steps")) } },
+        )
     }
 
     if (confirmDelete) {
@@ -343,3 +442,9 @@ private fun StepEditor(
         }
     }
 }
+
+private fun planMapData(p: Plan) = com.qcenaman.francesinha.logic.MapData(
+    planned = com.qcenaman.francesinha.logic.RouteLine.decode(p.route),
+    start = p.fromLat?.let { a -> p.fromLon?.let { com.qcenaman.francesinha.logic.LatLon(a, it) } },
+    end = p.toLat?.let { a -> p.toLon?.let { com.qcenaman.francesinha.logic.LatLon(a, it) } },
+)

@@ -71,6 +71,17 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
     var confirmDelete by remember { mutableStateOf(false) }
     val now = rememberNow()
     val isNew = id == 0L
+    var showMap by remember { mutableStateOf(false) }
+
+    if (showMap) {
+        androidx.activity.compose.BackHandler { showMap = false }
+        val track = remember(id) { com.qcenaman.francesinha.data.TrackStore.load(id) }
+        Column(modifier.fillMaxWidth()) {
+            TextButton(onClick = { showMap = false }) { Text(tr("Close map")) }
+            TruckMap(com.qcenaman.francesinha.logic.TripMap.forSession(s, track), Modifier.fillMaxWidth().weight(1f))
+        }
+        return
+    }
 
     Column(
         modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(12.dp),
@@ -81,6 +92,16 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
             label = { Text(tr("Route / load (optional)")) }, modifier = Modifier.fillMaxWidth(), singleLine = true,
         )
         ClientField(s.client) { s = s.copy(client = it) }
+        PlaceField(tr("Destination"), s.destName, allowMyLocation = false) { pl ->
+            s = s.copy(destName = pl.name, destLat = pl.lat, destLon = pl.lon)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!isNew) OutlinedButton(onClick = { showMap = true }, Modifier.weight(1f)) { Text(tr("Map")) }
+            val dest = s.destLat?.let { a -> s.destLon?.let { com.qcenaman.francesinha.logic.LatLon(a, it) } }
+            if (dest != null) {
+                OutlinedButton(onClick = { openNavigation(ctx, dest, s.destName) }, Modifier.weight(1f)) { Text(tr("Navigate")) }
+            }
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { pickDateTime(ctx, s.start) { s = s.copy(start = it) } }, Modifier.weight(1f)) {
@@ -259,6 +280,7 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
                 TextButton(onClick = {
                     confirmDelete = false
                     Store.get(id)?.photos?.forEach { Receipts.delete(ctx, it) }
+                    com.qcenaman.francesinha.data.TrackStore.delete(id)
                     Store.delete(id)
                     TrackingService.refresh(ctx)
                     onDone()

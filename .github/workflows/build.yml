@@ -32,6 +32,14 @@ jobs:
       - name: Build APK
         run: gradle --no-daemon assembleRelease
 
+      - name: Lint
+        run: gradle --no-daemon lintDebug
+        continue-on-error: true
+
+      - name: Lint report
+        if: always()
+        run: python3 .github/scripts/lint_annotate.py app/build/reports/lint-results-debug.xml
+
       - name: Version
         id: v
         run: |

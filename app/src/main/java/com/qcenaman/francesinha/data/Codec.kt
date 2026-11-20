@@ -45,7 +45,10 @@ object Codec {
                     .put("notes", p.notes)
                     .opt("perKmRate", p.perKmRate).opt("nightPct", p.nightPct).opt("weekendPct", p.weekendPct)
                     .opt("holidayPct", p.holidayPct).put("holiday", p.holiday)
-                    .put("nightFromHour", p.nightFromHour).put("nightToHour", p.nightToHour).put("client", p.client),
+                    .put("nightFromHour", p.nightFromHour).put("nightToHour", p.nightToHour).put("client", p.client)
+                    .put("fromName", p.fromName).opt("fromLat", p.fromLat).opt("fromLon", p.fromLon)
+                    .put("toName", p.toName).opt("toLat", p.toLat).opt("toLon", p.toLon)
+                    .opt("routeKm", p.routeKm).opt("routeMin", p.routeMin).put("route", p.route),
             )
         }
         return JSONObject().put("version", 1).put("plans", arr).toString()
@@ -90,6 +93,15 @@ object Codec {
                 nightFromHour = o.optInt("nightFromHour", 22),
                 nightToHour = o.optInt("nightToHour", 7),
                 client = o.optString("client", ""),
+                fromName = o.optString("fromName", ""),
+                fromLat = o.doubleOrNull("fromLat"),
+                fromLon = o.doubleOrNull("fromLon"),
+                toName = o.optString("toName", ""),
+                toLat = o.doubleOrNull("toLat"),
+                toLon = o.doubleOrNull("toLon"),
+                routeKm = o.doubleOrNull("routeKm"),
+                routeMin = if (o.has("routeMin") && !o.isNull("routeMin")) o.getInt("routeMin") else null,
+                route = o.optString("route", ""),
             )
         }
     }
@@ -101,6 +113,7 @@ object Codec {
     private fun pauseToJson(p: Pause): JSONObject = JSONObject()
         .put("id", p.id).put("type", p.type.name).put("start", p.start)
         .opt("end", p.end).put("note", p.note).put("auto", p.auto)
+        .opt("lat", p.lat).opt("lon", p.lon)
 
     private fun pauseFromJson(o: JSONObject) = Pause(
         id = o.getLong("id"),
@@ -109,12 +122,15 @@ object Codec {
         end = o.longOrNull("end"),
         note = o.optString("note", ""),
         auto = o.optBoolean("auto", false),
+        lat = o.doubleOrNull("lat"),
+        lon = o.doubleOrNull("lon"),
     )
 
     private fun extraToJson(e: Extra): JSONObject = JSONObject()
         .put("id", e.id).put("type", e.type.name).put("time", e.time)
         .put("euros", e.euros).put("note", e.note).put("name", e.name)
         .opt("percent", e.percent).put("deduct", e.deduct).put("refunded", e.refunded)
+        .opt("lat", e.lat).opt("lon", e.lon)
 
     private fun extraFromJson(o: JSONObject) = Extra(
         id = o.getLong("id"),
@@ -126,6 +142,8 @@ object Codec {
         percent = o.doubleOrNull("percent"),
         deduct = o.optBoolean("deduct", false),
         refunded = o.optBoolean("refunded", false),
+        lat = o.doubleOrNull("lat"),
+        lon = o.doubleOrNull("lon"),
     )
 
     fun encodePresets(list: List<CustomPreset>): String = JSONArray().also { a ->
@@ -166,6 +184,7 @@ object Codec {
             .opt("holidayPct", s.holidayPct).put("holiday", s.holiday)
             .put("nightFromHour", s.nightFromHour).put("nightToHour", s.nightToHour)
             .put("client", s.client).put("photos", JSONArray(s.photos))
+            .put("destName", s.destName).opt("destLat", s.destLat).opt("destLon", s.destLon).put("route", s.route)
             .opt("startLat", s.startLat).opt("startLon", s.startLon)
             .opt("endLat", s.endLat).opt("endLon", s.endLon)
             .put("pauses", pauses)
@@ -200,6 +219,10 @@ object Codec {
             nightFromHour = o.optInt("nightFromHour", 22),
             nightToHour = o.optInt("nightToHour", 7),
             client = o.optString("client", ""),
+            destName = o.optString("destName", ""),
+            destLat = o.doubleOrNull("destLat"),
+            destLon = o.doubleOrNull("destLon"),
+            route = o.optString("route", ""),
             photos = o.optJSONArray("photos")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             pauses = (0 until arr.length()).map { pauseFromJson(arr.getJSONObject(it)) },
             extras = (0 until ex.length()).map { extraFromJson(ex.getJSONObject(it)) },

@@ -93,6 +93,7 @@ class TrackingService : Service(), LocationListener {
         super.onCreate()
         com.qcenaman.francesinha.logic.I18n.lang = Prefs.lang(this)
         Store.init(this)
+        com.qcenaman.francesinha.data.TrackStore.init(this)
         lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         createChannels()
     }
@@ -159,6 +160,11 @@ class TrackingService : Service(), LocationListener {
 
     override fun onLocationChanged(location: Location) {
         lastFixAt = System.currentTimeMillis()
+        val acc = if (location.hasAccuracy()) location.accuracy else 0f
+        if (acc <= 50f) {
+            com.qcenaman.francesinha.data.LastFix.set(location.latitude, location.longitude, lastFixAt)
+            recordTrack(location.latitude, location.longitude, lastFixAt)
+        }
         val fix = Fix(
             time = lastFixAt,
             lat = location.latitude,
@@ -167,6 +173,22 @@ class TrackingService : Service(), LocationListener {
             accuracy = if (location.hasAccuracy()) location.accuracy else null,
         )
         handle(detector.onFix(fix))
+    }
+
+    private var lastTrack: com.qcenaman.francesinha.logic.LatLon? = null
+    private var lastTrackSession = 0L
+
+    /** Saves a track point every ~40 m while a trip is running. */
+    private fun recordTrack(lat: Double, lon: Double, t: Long) {
+        val s = Store.openSession() ?: return
+        val prev = lastTrack
+        if (s.id != lastTrackSession || prev == null ||
+            com.qcenaman.francesinha.logic.Geo.distanceMeters(prev.lat, prev.lon, lat, lon) >= 40
+        ) {
+            com.qcenaman.francesinha.data.TrackStore.append(s.id, t, lat, lon)
+            lastTrack = com.qcenaman.francesinha.logic.LatLon(lat, lon)
+            lastTrackSession = s.id
+        }
     }
 
     override fun onProviderEnabled(provider: String) {}

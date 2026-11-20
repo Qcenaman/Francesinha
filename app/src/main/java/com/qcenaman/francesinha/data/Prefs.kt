@@ -86,6 +86,23 @@ object Prefs {
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().putFloat("otRate", (v ?: 0.0).toFloat()).apply()
     }
 
+    fun orsKey(ctx: Context): String = sp(ctx).getString("orsKey", "")?.trim() ?: ""
+    fun setOrsKey(ctx: Context, v: String) = sp(ctx).edit().putString("orsKey", v.trim()).apply()
+
+    fun truck(ctx: Context): com.qcenaman.francesinha.logic.TruckSize {
+        val d = com.qcenaman.francesinha.logic.TruckSize()
+        return com.qcenaman.francesinha.logic.TruckSize(
+            height = num(ctx, "truckHeight") ?: d.height,
+            width = num(ctx, "truckWidth") ?: d.width,
+            length = num(ctx, "truckLength") ?: d.length,
+            weight = num(ctx, "truckWeight") ?: d.weight,
+            axleLoad = num(ctx, "truckAxle") ?: d.axleLoad,
+            hazmat = sp(ctx).getBoolean("truckHazmat", false),
+        )
+    }
+
+    fun setHazmat(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("truckHazmat", v).apply()
+
     /** A new trip with the default pay settings filled in. */
     private fun sp(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
