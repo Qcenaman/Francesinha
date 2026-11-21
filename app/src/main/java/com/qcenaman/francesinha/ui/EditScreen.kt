@@ -51,7 +51,6 @@ import com.qcenaman.francesinha.model.ExtraType
 import com.qcenaman.francesinha.model.Pause
 import com.qcenaman.francesinha.model.PauseType
 import com.qcenaman.francesinha.model.Session
-import com.qcenaman.francesinha.service.TrackingService
 
 @Composable
 fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
@@ -71,17 +70,7 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
     var confirmDelete by remember { mutableStateOf(false) }
     val now = rememberNow()
     val isNew = id == 0L
-    var showMap by remember { mutableStateOf(false) }
 
-    if (showMap) {
-        androidx.activity.compose.BackHandler { showMap = false }
-        val track = remember(id) { com.qcenaman.francesinha.data.TrackStore.load(id) }
-        Column(modifier.fillMaxWidth()) {
-            TextButton(onClick = { showMap = false }) { Text(tr("Close map")) }
-            TruckMap(com.qcenaman.francesinha.logic.TripMap.forSession(s, track), Modifier.fillMaxWidth().weight(1f))
-        }
-        return
-    }
 
     Column(
         modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(12.dp),
@@ -92,16 +81,6 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
             label = { Text(tr("Route / load (optional)")) }, modifier = Modifier.fillMaxWidth(), singleLine = true,
         )
         ClientField(s.client) { s = s.copy(client = it) }
-        PlaceField(tr("Destination"), s.destName, allowMyLocation = false) { pl ->
-            s = s.copy(destName = pl.name, destLat = pl.lat, destLon = pl.lon)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (!isNew) OutlinedButton(onClick = { showMap = true }, Modifier.weight(1f)) { Text(tr("Map")) }
-            val dest = s.destLat?.let { a -> s.destLon?.let { com.qcenaman.francesinha.logic.LatLon(a, it) } }
-            if (dest != null) {
-                OutlinedButton(onClick = { openNavigation(ctx, dest, s.destName) }, Modifier.weight(1f)) { Text(tr("Navigate")) }
-            }
-        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { pickDateTime(ctx, s.start) { s = s.copy(start = it) } }, Modifier.weight(1f)) {
@@ -125,8 +104,6 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
                     tr("Stops") to Fmt.duration(Stats.pauseMs(s, now)),
                     tr("Total") to Fmt.duration(Stats.totalMs(s, now)),
                 )
-                Spacer(Modifier.height(6.dp))
-                Text(tr("GPS distance: %s", Fmt.km(s.gpsMeters / 1000.0)), style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -162,7 +139,7 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
         }
         OutlinedTextField(
             value = manualKm, onValueChange = { manualKm = it },
-            label = { Text(tr("Km override (leave empty to use odometer / GPS)")) },
+            label = { Text(tr("Km driven (or use the odometer above)")) },
             modifier = Modifier.fillMaxWidth(), singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         )
@@ -251,7 +228,6 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
             )
             Store.upsert(saved)
             if (saved.client.isNotBlank()) Prefs.setLastClient(ctx, saved.client)
-            TrackingService.refresh(ctx)
             onDone()
         }, Modifier.fillMaxWidth().height(52.dp)) { Text(tr("Save")) }
 
@@ -280,10 +256,8 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
                 TextButton(onClick = {
                     confirmDelete = false
                     Store.get(id)?.photos?.forEach { Receipts.delete(ctx, it) }
-                    com.qcenaman.francesinha.data.TrackStore.delete(id)
                     Store.delete(id)
-                    TrackingService.refresh(ctx)
-                    onDone()
+                            onDone()
                 }) { Text(tr("Delete")) }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(tr("Keep")) } },

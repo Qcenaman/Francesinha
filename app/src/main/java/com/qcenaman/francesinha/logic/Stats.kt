@@ -229,34 +229,3 @@ object Stats {
     fun inRange(list: List<Session>, from: Long, to: Long): List<Session> =
         list.filter { it.start in from until to }
 }
-
-/** EU driving-time rules (approximate; not a replacement for the tachograph). */
-object Limits {
-    const val DAILY_MS = 9 * 3_600_000L
-    const val DAILY_EXTENDED_MS = 10 * 3_600_000L
-    const val WEEKLY_MS = 56 * 3_600_000L
-    const val FORTNIGHT_MS = 90 * 3_600_000L
-
-    data class Status(val todayMs: Long, val weekMs: Long, val fortnightMs: Long, val extendedDaysThisWeek: Int) {
-        val dailyOver get() = todayMs > DAILY_MS
-        val weeklyOver get() = weekMs > WEEKLY_MS
-        val fortnightOver get() = fortnightMs > FORTNIGHT_MS
-        /** Driving 9–10 h is allowed at most twice a week. */
-        val extendedTooOften get() = extendedDaysThisWeek > 2
-    }
-
-    fun status(sessions: List<Session>, now: Long): Status {
-        val (dayFrom, dayTo) = Period.TODAY.range(now)
-        val (weekFrom, weekTo) = Period.WEEK.range(now)
-        val (lastWeekFrom, _) = Period.LAST_WEEK.range(now)
-        fun driving(from: Long, to: Long) = sessions.sumOf { Stats.drivingBetween(it, from, to, now) }
-        var extended = 0
-        var d = weekFrom
-        while (d < weekTo && d <= now) {
-            val next = Calendar.getInstance().apply { timeInMillis = d; add(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
-            if (driving(d, next) > DAILY_MS) extended++
-            d = next
-        }
-        return Status(driving(dayFrom, dayTo), driving(weekFrom, weekTo), driving(lastWeekFrom, weekTo), extended)
-    }
-}

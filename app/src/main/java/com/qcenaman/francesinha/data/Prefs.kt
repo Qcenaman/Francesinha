@@ -1,39 +1,11 @@
 package com.qcenaman.francesinha.data
 
 import android.content.Context
-import com.qcenaman.francesinha.logic.DetectorConfig
 import com.qcenaman.francesinha.model.ExtraType
-
-data class Config(
-    val autoDetect: Boolean = true,
-    val startSpeedKmh: Int = 12,
-    val breakAfterMin: Int = 5,
-    val endAfterMin: Int = 120,
-    val alertsOn: Boolean = true,
-    val driveAlertMin: Int = 270,
-) {
-    fun detector() = DetectorConfig(
-        startSpeedKmh = startSpeedKmh.toDouble(),
-        breakAfterMs = breakAfterMin * 60_000L,
-        endAfterMs = endAfterMin * 60_000L,
-    )
-}
 
 object Prefs {
     private const val NAME = "settings"
 
-    fun load(ctx: Context): Config {
-        val p = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-        val d = Config()
-        return Config(
-            autoDetect = p.getBoolean("autoDetect", d.autoDetect),
-            startSpeedKmh = p.getInt("startSpeedKmh", d.startSpeedKmh),
-            breakAfterMin = p.getInt("breakAfterMin", d.breakAfterMin),
-            endAfterMin = p.getInt("endAfterMin", d.endAfterMin),
-            alertsOn = p.getBoolean("alertsOn", d.alertsOn),
-            driveAlertMin = p.getInt("driveAlertMin", d.driveAlertMin),
-        )
-    }
 
     /** Default pay per hour for new trips (null = not set). */
     fun rate(ctx: Context): Double? {
@@ -86,22 +58,8 @@ object Prefs {
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().putFloat("otRate", (v ?: 0.0).toFloat()).apply()
     }
 
-    fun orsKey(ctx: Context): String = sp(ctx).getString("orsKey", "")?.trim() ?: ""
-    fun setOrsKey(ctx: Context, v: String) = sp(ctx).edit().putString("orsKey", v.trim()).apply()
 
-    fun truck(ctx: Context): com.qcenaman.francesinha.logic.TruckSize {
-        val d = com.qcenaman.francesinha.logic.TruckSize()
-        return com.qcenaman.francesinha.logic.TruckSize(
-            height = num(ctx, "truckHeight") ?: d.height,
-            width = num(ctx, "truckWidth") ?: d.width,
-            length = num(ctx, "truckLength") ?: d.length,
-            weight = num(ctx, "truckWeight") ?: d.weight,
-            axleLoad = num(ctx, "truckAxle") ?: d.axleLoad,
-            hazmat = sp(ctx).getBoolean("truckHazmat", false),
-        )
-    }
 
-    fun setHazmat(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("truckHazmat", v).apply()
 
     /** A new trip with the default pay settings filled in. */
     private fun sp(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
@@ -140,8 +98,6 @@ object Prefs {
     fun setPresets(ctx: Context, list: List<com.qcenaman.francesinha.model.CustomPreset>) =
         sp(ctx).edit().putString("presets", Codec.encodePresets(list)).apply()
 
-    fun limitAlerts(ctx: Context): Boolean = sp(ctx).getBoolean("limitAlerts", true)
-    fun setLimitAlerts(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("limitAlerts", v).apply()
 
     fun lastClient(ctx: Context): String = sp(ctx).getString("lastClient", "") ?: ""
     fun setLastClient(ctx: Context, v: String) = sp(ctx).edit().putString("lastClient", v).apply()
@@ -189,7 +145,7 @@ object Prefs {
                 "s" -> ed.putString(k, e.getString("v"))
             }
         }
-        ed.commit()
+        ed.apply()
     }
 
     fun lang(ctx: Context): com.qcenaman.francesinha.logic.Lang =
@@ -207,14 +163,4 @@ object Prefs {
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().putFloat("eur_" + t.name, v.toFloat()).apply()
     }
 
-    fun save(ctx: Context, c: Config) {
-        ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
-            .putBoolean("autoDetect", c.autoDetect)
-            .putInt("startSpeedKmh", c.startSpeedKmh)
-            .putInt("breakAfterMin", c.breakAfterMin)
-            .putInt("endAfterMin", c.endAfterMin)
-            .putBoolean("alertsOn", c.alertsOn)
-            .putInt("driveAlertMin", c.driveAlertMin)
-            .apply()
-    }
 }

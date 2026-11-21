@@ -21,8 +21,6 @@ data class Pause(
     val end: Long?,
     val note: String = "",
     val auto: Boolean = false,
-    val lat: Double? = null,
-    val lon: Double? = null,
 )
 
 enum class ExtraKind { MEAL, SLEEPOVER, ADJUSTMENT, EXPENSE }
@@ -67,8 +65,6 @@ data class Extra(
     val deduct: Boolean = false,
     /** Expense is paid back by the employer (then it counts as money received). */
     val refunded: Boolean = false,
-    val lat: Double? = null,
-    val lon: Double? = null,
 ) {
     val displayName: String get() = name.ifBlank { type.label }
 
@@ -107,7 +103,7 @@ data class Session(
     val overtimeRate: Double? = null,
     /** Final amount on the invoice / payslip, to compare with what was expected. */
     val invoiceEuros: Double? = null,
-    /** Expected pay from the plan this trip was made from. */
+    /** Expected pay entered before the trip (to compare with the invoice). */
     val plannedEuros: Double? = null,
     /** Pay per km (null = not paid per km). */
     val perKmRate: Double? = null,
@@ -123,12 +119,6 @@ data class Session(
     val client: String = "",
     /** Receipt / invoice photo file names (in the app's receipts folder). */
     val photos: List<String> = emptyList(),
-    /** Where the trip is going (from a plan, or set by hand) — used for OsmAnd navigation. */
-    val destName: String = "",
-    val destLat: Double? = null,
-    val destLon: Double? = null,
-    /** Planned truck route, encoded "lat,lon;lat,lon…". */
-    val route: String = "",
     val pauses: List<Pause> = emptyList(),
     val extras: List<Extra> = emptyList(),
     val startLat: Double? = null,

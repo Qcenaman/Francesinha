@@ -39,7 +39,7 @@ object Receipts {
     }
 }
 
-/** One-file backup (trips, plans, settings, photos) to save off the phone, and restore. */
+/** One-file backup (trips, settings, photos) to save off the phone, and restore. */
 object Backup {
     fun export(ctx: Context): File {
         val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
@@ -49,10 +49,8 @@ object Backup {
                 z.putNextEntry(ZipEntry(name)); z.write(bytes); z.closeEntry()
             }
             put("sessions.json", Codec.encode(Store.sessions.value).toByteArray())
-            put("plans.json", Codec.encodePlans(PlanStore.plans.value).toByteArray())
             put("settings.json", Prefs.exportAll(ctx).toString().toByteArray())
             Receipts.dir(ctx).listFiles()?.forEach { f -> put("receipts/" + f.name, f.readBytes()) }
-            TrackStore.folder(ctx).listFiles()?.forEach { f -> put("tracks/" + f.name, f.readBytes()) }
         }
         return out
     }
@@ -60,29 +58,23 @@ object Backup {
     /** Replaces everything with the backup's content. Returns number of trips restored, or null if not a backup. */
     fun restore(ctx: Context, src: Uri): Int? = runCatching {
         var sessions: String? = null
-        var plans: String? = null
         var settings: String? = null
         val photos = mutableMapOf<String, ByteArray>()
-        val tracks = mutableMapOf<String, ByteArray>()
         ZipInputStream(ctx.contentResolver.openInputStream(src)!!).use { z ->
             while (true) {
                 val e = z.nextEntry ?: break
                 val bytes = z.readBytes()
                 when {
                     e.name == "sessions.json" -> sessions = String(bytes)
-                    e.name == "plans.json" -> plans = String(bytes)
                     e.name == "settings.json" -> settings = String(bytes)
                     e.name.startsWith("receipts/") && !e.name.contains("..") -> photos[e.name.removePrefix("receipts/")] = bytes
-                    e.name.startsWith("tracks/") && !e.name.contains("..") -> tracks[e.name.removePrefix("tracks/")] = bytes
                 }
             }
         }
         val list = Codec.decode(sessions ?: return@runCatching null)
         Store.update { list }
-        plans?.let { p -> val pl = Codec.decodePlans(p); PlanStore.replaceAll(pl) }
         settings?.let { Prefs.importAll(ctx, JSONObject(it)) }
         photos.forEach { (name, bytes) -> if (name.isNotBlank() && !name.contains('/')) Receipts.file(ctx, name).writeBytes(bytes) }
-        tracks.forEach { (name, bytes) -> if (name.isNotBlank() && !name.contains('/')) java.io.File(TrackStore.folder(ctx), name).writeBytes(bytes) }
         list.size
     }.getOrNull()
 }

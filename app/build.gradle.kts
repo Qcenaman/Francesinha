@@ -12,8 +12,8 @@ android {
         applicationId = "com.qcenaman.francesinha"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "2.0.0"
     }
 
     signingConfigs {
@@ -54,11 +54,9 @@ dependencies {
     implementation(composeBom)
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
-    implementation("org.maplibre.gl:android-sdk:11.8.2")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

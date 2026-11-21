@@ -5,9 +5,6 @@ import com.qcenaman.francesinha.model.Extra
 import com.qcenaman.francesinha.model.Tax
 import com.qcenaman.francesinha.model.ExtraType
 import com.qcenaman.francesinha.model.Pause
-import com.qcenaman.francesinha.model.Plan
-import com.qcenaman.francesinha.model.PlanStep
-import com.qcenaman.francesinha.model.StepKind
 import com.qcenaman.francesinha.model.PauseType
 import com.qcenaman.francesinha.model.Session
 import org.json.JSONArray
@@ -26,86 +23,6 @@ object Codec {
         return (0 until arr.length()).map { sessionFromJson(arr.getJSONObject(it)) }
     }
 
-    fun encodePlans(list: List<Plan>): String {
-        val arr = JSONArray()
-        list.forEach { p ->
-            val steps = JSONArray()
-            p.steps.forEach { s ->
-                steps.put(
-                    JSONObject().put("id", s.id).put("kind", s.kind.name).put("minutes", s.minutes).put("km", s.km)
-                        .put("pauseType", s.pauseType.name).put("extraType", s.extraType.name)
-                        .put("euros", s.euros).put("note", s.note).put("name", s.name)
-                        .opt("percent", s.percent).put("deduct", s.deduct).put("refunded", s.refunded),
-                )
-            }
-            arr.put(
-                JSONObject().put("id", p.id).put("name", p.name).put("start", p.start).put("steps", steps)
-                    .opt("hourlyRate", p.hourlyRate).put("paidBreaks", p.paidBreaks)
-                    .opt("overtimeAfterMin", p.overtimeAfterMin).opt("overtimeRate", p.overtimeRate)
-                    .put("notes", p.notes)
-                    .opt("perKmRate", p.perKmRate).opt("nightPct", p.nightPct).opt("weekendPct", p.weekendPct)
-                    .opt("holidayPct", p.holidayPct).put("holiday", p.holiday)
-                    .put("nightFromHour", p.nightFromHour).put("nightToHour", p.nightToHour).put("client", p.client)
-                    .put("fromName", p.fromName).opt("fromLat", p.fromLat).opt("fromLon", p.fromLon)
-                    .put("toName", p.toName).opt("toLat", p.toLat).opt("toLon", p.toLon)
-                    .opt("routeKm", p.routeKm).opt("routeMin", p.routeMin).put("route", p.route),
-            )
-        }
-        return JSONObject().put("version", 1).put("plans", arr).toString()
-    }
-
-    fun decodePlans(text: String): List<Plan> {
-        val arr = JSONObject(text).optJSONArray("plans") ?: JSONArray()
-        return (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            val sa = o.optJSONArray("steps") ?: JSONArray()
-            Plan(
-                id = o.getLong("id"),
-                name = o.optString("name", ""),
-                start = o.getLong("start"),
-                steps = (0 until sa.length()).map { j ->
-                    val s = sa.getJSONObject(j)
-                    PlanStep(
-                        id = s.getLong("id"),
-                        kind = StepKind.entries.firstOrNull { it.name == s.optString("kind") } ?: StepKind.DRIVE,
-                        minutes = s.optInt("minutes", 0),
-                        km = s.optDouble("km", 0.0),
-                        pauseType = PauseType.from(s.optString("pauseType")),
-                        extraType = ExtraType.from(s.optString("extraType")),
-                        euros = s.optDouble("euros", 0.0),
-                        note = s.optString("note", ""),
-                        name = s.optString("name", ""),
-                        percent = s.doubleOrNull("percent"),
-                        deduct = s.optBoolean("deduct", false),
-                        refunded = s.optBoolean("refunded", false),
-                    )
-                },
-                hourlyRate = o.doubleOrNull("hourlyRate"),
-                paidBreaks = o.optBoolean("paidBreaks", false),
-                overtimeAfterMin = if (o.has("overtimeAfterMin") && !o.isNull("overtimeAfterMin")) o.getInt("overtimeAfterMin") else null,
-                overtimeRate = o.doubleOrNull("overtimeRate"),
-                notes = o.optString("notes", ""),
-                perKmRate = o.doubleOrNull("perKmRate"),
-                nightPct = o.doubleOrNull("nightPct"),
-                weekendPct = o.doubleOrNull("weekendPct"),
-                holidayPct = o.doubleOrNull("holidayPct"),
-                holiday = o.optBoolean("holiday", false),
-                nightFromHour = o.optInt("nightFromHour", 22),
-                nightToHour = o.optInt("nightToHour", 7),
-                client = o.optString("client", ""),
-                fromName = o.optString("fromName", ""),
-                fromLat = o.doubleOrNull("fromLat"),
-                fromLon = o.doubleOrNull("fromLon"),
-                toName = o.optString("toName", ""),
-                toLat = o.doubleOrNull("toLat"),
-                toLon = o.doubleOrNull("toLon"),
-                routeKm = o.doubleOrNull("routeKm"),
-                routeMin = if (o.has("routeMin") && !o.isNull("routeMin")) o.getInt("routeMin") else null,
-                route = o.optString("route", ""),
-            )
-        }
-    }
-
     private fun JSONObject.opt(k: String, v: Any?): JSONObject = if (v != null) put(k, v) else this
     private fun JSONObject.longOrNull(k: String): Long? = if (has(k) && !isNull(k)) getLong(k) else null
     private fun JSONObject.doubleOrNull(k: String): Double? = if (has(k) && !isNull(k)) getDouble(k) else null
@@ -113,7 +30,7 @@ object Codec {
     private fun pauseToJson(p: Pause): JSONObject = JSONObject()
         .put("id", p.id).put("type", p.type.name).put("start", p.start)
         .opt("end", p.end).put("note", p.note).put("auto", p.auto)
-        .opt("lat", p.lat).opt("lon", p.lon)
+
 
     private fun pauseFromJson(o: JSONObject) = Pause(
         id = o.getLong("id"),
@@ -122,15 +39,12 @@ object Codec {
         end = o.longOrNull("end"),
         note = o.optString("note", ""),
         auto = o.optBoolean("auto", false),
-        lat = o.doubleOrNull("lat"),
-        lon = o.doubleOrNull("lon"),
     )
 
     private fun extraToJson(e: Extra): JSONObject = JSONObject()
         .put("id", e.id).put("type", e.type.name).put("time", e.time)
         .put("euros", e.euros).put("note", e.note).put("name", e.name)
         .opt("percent", e.percent).put("deduct", e.deduct).put("refunded", e.refunded)
-        .opt("lat", e.lat).opt("lon", e.lon)
 
     private fun extraFromJson(o: JSONObject) = Extra(
         id = o.getLong("id"),
@@ -142,8 +56,6 @@ object Codec {
         percent = o.doubleOrNull("percent"),
         deduct = o.optBoolean("deduct", false),
         refunded = o.optBoolean("refunded", false),
-        lat = o.doubleOrNull("lat"),
-        lon = o.doubleOrNull("lon"),
     )
 
     fun encodePresets(list: List<CustomPreset>): String = JSONArray().also { a ->
@@ -184,7 +96,6 @@ object Codec {
             .opt("holidayPct", s.holidayPct).put("holiday", s.holiday)
             .put("nightFromHour", s.nightFromHour).put("nightToHour", s.nightToHour)
             .put("client", s.client).put("photos", JSONArray(s.photos))
-            .put("destName", s.destName).opt("destLat", s.destLat).opt("destLon", s.destLon).put("route", s.route)
             .opt("startLat", s.startLat).opt("startLon", s.startLon)
             .opt("endLat", s.endLat).opt("endLon", s.endLon)
             .put("pauses", pauses)
@@ -219,10 +130,6 @@ object Codec {
             nightFromHour = o.optInt("nightFromHour", 22),
             nightToHour = o.optInt("nightToHour", 7),
             client = o.optString("client", ""),
-            destName = o.optString("destName", ""),
-            destLat = o.doubleOrNull("destLat"),
-            destLon = o.doubleOrNull("destLon"),
-            route = o.optString("route", ""),
             photos = o.optJSONArray("photos")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             pauses = (0 until arr.length()).map { pauseFromJson(arr.getJSONObject(it)) },
             extras = (0 until ex.length()).map { extraFromJson(ex.getJSONObject(it)) },

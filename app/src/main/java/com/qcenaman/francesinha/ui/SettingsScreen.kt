@@ -26,10 +26,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.qcenaman.francesinha.data.Config
 import com.qcenaman.francesinha.data.Prefs
 import com.qcenaman.francesinha.logic.Fmt
-import com.qcenaman.francesinha.service.TrackingService
 import com.qcenaman.francesinha.model.ExtraType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
@@ -38,13 +36,6 @@ import androidx.compose.ui.text.input.KeyboardType
 @Composable
 fun SettingsScreen(modifier: Modifier) {
     val ctx = LocalContext.current
-    var c by remember { mutableStateOf(Prefs.load(ctx)) }
-    var limitAlerts by remember { mutableStateOf(Prefs.limitAlerts(ctx)) }
-    fun set(n: Config) {
-        c = n
-        Prefs.save(ctx, n)
-        TrackingService.refresh(ctx)
-    }
 
     Column(
         modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(12.dp),
@@ -60,7 +51,6 @@ fun SettingsScreen(modifier: Modifier) {
                             onClick = {
                                 Prefs.setLang(ctx, l)
                                 UiLang.lang = l
-                                TrackingService.refresh(ctx)
                             },
                             label = { Text(l.label.substringBefore(" (")) },
                         )
@@ -68,22 +58,6 @@ fun SettingsScreen(modifier: Modifier) {
                 }
             }
         }
-        ToggleRow(tr("Automatic trips"), tr("Start, pause and end trips from GPS"), c.autoDetect) { set(c.copy(autoDetect = it)) }
-        Stepper(tr("Trip starts above"), "${c.startSpeedKmh} km/h", { set(c.copy(startSpeedKmh = (c.startSpeedKmh - 1).coerceAtLeast(5))) }) {
-            set(c.copy(startSpeedKmh = (c.startSpeedKmh + 1).coerceAtMost(40)))
-        }
-        Stepper(tr("Stopped this long = break"), "${c.breakAfterMin} min", { set(c.copy(breakAfterMin = (c.breakAfterMin - 1).coerceAtLeast(1))) }) {
-            set(c.copy(breakAfterMin = (c.breakAfterMin + 1).coerceAtMost(60)))
-        }
-        Stepper(tr("Stopped this long = trip ends"), Fmt.duration(c.endAfterMin * 60_000L), {
-            set(c.copy(endAfterMin = (c.endAfterMin - 15).coerceAtLeast(15)))
-        }) { set(c.copy(endAfterMin = (c.endAfterMin + 15).coerceAtMost(12 * 60))) }
-        ToggleRow(tr("Break reminder"), tr("Alert after long driving without a proper break (15 min+)"), c.alertsOn) {
-            set(c.copy(alertsOn = it))
-        }
-        Stepper(tr("Remind after driving"), Fmt.duration(c.driveAlertMin * 60_000L), {
-            set(c.copy(driveAlertMin = (c.driveAlertMin - 15).coerceAtLeast(30)))
-        }) { set(c.copy(driveAlertMin = (c.driveAlertMin + 15).coerceAtMost(10 * 60))) }
         Card {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(tr("Base salary (€ per month)"), fontWeight = FontWeight.Bold)
@@ -159,50 +133,15 @@ fun SettingsScreen(modifier: Modifier) {
                 }
             }
         }
-        RouteCard()
         PayRulesCard()
         TaxesCard()
         PresetsCard()
-        ToggleRow(tr("Driving limit alerts (EU)"), tr("Warn at 9h/10h a day, 56h a week, 90h in two weeks"), limitAlerts) {
-            limitAlerts = it
-            Prefs.setLimitAlerts(ctx, it)
-        }
         BackupCard()
-        Text(
-            tr("Tip: if trips stop recording with the screen off, allow the app in the phone's battery settings ") +
-                tr("(no restrictions / auto-start)."),
-            style = MaterialTheme.typography.bodySmall,
-        )
     }
 }
 
 @Composable
-private fun ToggleRow(title: String, sub: String, value: Boolean, onChange: (Boolean) -> Unit) {
-    Card {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.Bold)
-                Text(sub, style = MaterialTheme.typography.bodySmall)
-            }
-            Switch(checked = value, onCheckedChange = onChange)
-        }
-    }
-}
-
-@Composable
-private fun Stepper(title: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
-    Card {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            FilledTonalButton(onClick = onMinus) { Text("−") }
-            Text(value, modifier = Modifier.width(80.dp), textAlign = TextAlign.Center)
-            FilledTonalButton(onClick = onPlus) { Text("+") }
-        }
-    }
-}
-
-@Composable
-private fun MoneyField(label: String, initial: Double?, modifier: Modifier = Modifier.fillMaxWidth(), digits: Int = 2, onSet: (Double?) -> Unit) {
+private fun MoneyField(label: String, initial: Double?, modifier: Modifier = Modifier, digits: Int = 2, onSet: (Double?) -> Unit) {
     var v by remember { mutableStateOf(initial?.let { String.format(java.util.Locale.US, "%.${digits}f", it) } ?: "") }
     OutlinedTextField(
         value = v,
@@ -210,7 +149,7 @@ private fun MoneyField(label: String, initial: Double?, modifier: Modifier = Mod
             v = it
             onSet(parseNum(it))
         },
-        label = { Text(label) }, singleLine = true, modifier = modifier,
+        label = { Text(label) }, singleLine = true, modifier = modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
     )
 }
@@ -418,61 +357,9 @@ private fun BackupCard() {
                     pending = null
                     val n = com.qcenaman.francesinha.data.Backup.restore(ctx, uri)
                     msg = if (n == null) tr("That file isn't a Francesinha backup.") else tr("Restored %d trips. Reopen the app to see every setting.", n)
-                    TrackingService.refresh(ctx)
                 }) { Text(tr("Restore")) }
             },
             dismissButton = { androidx.compose.material3.TextButton(onClick = { pending = null }) { Text(tr("Cancel")) } },
         )
-    }
-}
-
-@Composable
-private fun RouteCard() {
-    val ctx = LocalContext.current
-    var key by remember { mutableStateOf(Prefs.orsKey(ctx)) }
-    var hazmat by remember { mutableStateOf(Prefs.truck(ctx).hazmat) }
-    val truck = Prefs.truck(ctx)
-    Card {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(tr("Truck and route planning"), fontWeight = FontWeight.Bold)
-            Text(
-                tr("Routes avoid roads the truck can't use (height, weight, no-truck roads) where OpenStreetMap has that data. Always follow the road signs."),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MoneyField(tr("Height (m)"), truck.height, Modifier.weight(1f), 2) { Prefs.setNum(ctx, "truckHeight", it) }
-                MoneyField(tr("Width (m)"), truck.width, Modifier.weight(1f), 2) { Prefs.setNum(ctx, "truckWidth", it) }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MoneyField(tr("Length (m)"), truck.length, Modifier.weight(1f), 2) { Prefs.setNum(ctx, "truckLength", it) }
-                MoneyField(tr("Weight (t)"), truck.weight, Modifier.weight(1f), 1) { Prefs.setNum(ctx, "truckWeight", it) }
-            }
-            MoneyField(tr("Axle load (t)"), truck.axleLoad, Modifier.fillMaxWidth(), 1) { Prefs.setNum(ctx, "truckAxle", it) }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(tr("Dangerous goods (ADR)"), modifier = Modifier.weight(1f))
-                Switch(checked = hazmat, onCheckedChange = {
-                    hazmat = it
-                    Prefs.setHazmat(ctx, it)
-                })
-            }
-            OutlinedTextField(
-                value = key,
-                onValueChange = {
-                    key = it
-                    Prefs.setOrsKey(ctx, it)
-                },
-                label = { Text(tr("Free route key (openrouteservice)")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                tr("Get it free at account.heigit.org (sign up → API keys → Standard). Up to 2,000 routes a day."),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            androidx.compose.material3.TextButton(onClick = {
-                try {
-                    ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://account.heigit.org")))
-                } catch (_: Exception) {
-                }
-            }) { Text(tr("Open account.heigit.org")) }
-        }
     }
 }
