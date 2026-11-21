@@ -10,7 +10,7 @@ object Csv {
 
     fun export(sessions: List<Session>, now: Long): String {
         val sb = StringBuilder()
-        sb.append("date,start,end,client,title,driving_h,pauses_h,total_h,km,gps_km,odo_start,odo_end,paid_h,eur_per_hour,hours_pay,overtime_h,overtime_pay,km_pay,night_weekend_holiday_pay,meals,sleepovers,meals_eur,sleepovers_eur,prizes_supplements_discounts_custom_eur,expenses_eur,refunded_eur,expected_pay_eur,planned_eur,invoice_eur,invoice_diff_eur,pauses,extras,notes\n")
+        sb.append("date,start,end,title,driving_h,pauses_h,total_h,km,odo_start,odo_end,paid_h,eur_per_hour,hours_pay,overtime_h,overtime_pay,night_weekend_holiday_pay,meals,sleepovers,meals_eur,sleepovers_eur,prizes_supplements_discounts_custom_eur,expenses_eur,refunded_eur,expected_pay_eur,planned_eur,invoice_eur,invoice_diff_eur,pauses,extras,notes\n")
         for (s in sessions.sortedBy { it.start }) {
             val pauses = s.pauses.joinToString(" | ") { p ->
                 "${p.type.label} ${Fmt.time(p.start)}-${p.end?.let { Fmt.time(it) } ?: "now"}" +
@@ -20,13 +20,11 @@ object Csv {
                 Fmt.isoDate(s.start),
                 Fmt.time(s.start),
                 s.end?.let { Fmt.time(it) } ?: "",
-                s.client,
                 s.title,
                 Fmt.hours(Stats.drivingMs(s, now)),
                 Fmt.hours(Stats.pauseMs(s, now)),
                 Fmt.hours(Stats.totalMs(s, now)),
                 Fmt.num(s.km()),
-                Fmt.num(s.gpsMeters / 1000.0),
                 s.odoStart?.let { Fmt.num(it) } ?: "",
                 s.odoEnd?.let { Fmt.num(it) } ?: "",
                 Fmt.hours(Stats.paidMs(s, now)),
@@ -34,7 +32,6 @@ object Csv {
                 money(Stats.hourPay(s, now)),
                 Fmt.hours(Stats.overtimeMs(s, now)),
                 money(Stats.overtimePay(s, now)),
-                money(Stats.kmPay(s)),
                 money(Stats.supplementPay(s, now)),
                 s.extras.count { it.type.isMeal }.toString(),
                 s.extras.count { it.type.isSleepover }.toString(),

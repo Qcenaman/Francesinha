@@ -80,7 +80,6 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
             value = s.title, onValueChange = { s = s.copy(title = it) },
             label = { Text(tr("Route / load (optional)")) }, modifier = Modifier.fillMaxWidth(), singleLine = true,
         )
-        ClientField(s.client) { s = s.copy(client = it) }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { pickDateTime(ctx, s.start) { s = s.copy(start = it) } }, Modifier.weight(1f)) {
@@ -227,7 +226,6 @@ fun EditScreen(modifier: Modifier, id: Long, onDone: () -> Unit) {
                 invoiceEuros = parseNum(invoice),
             )
             Store.upsert(saved)
-            if (saved.client.isNotBlank()) Prefs.setLastClient(ctx, saved.client)
             onDone()
         }, Modifier.fillMaxWidth().height(52.dp)) { Text(tr("Save")) }
 
@@ -311,11 +309,10 @@ fun PayEditor(s: Session, now: Long, onChange: (Session) -> Unit) {
     var rate by remember(s.id) { mutableStateOf(s.hourlyRate?.let { money(it) } ?: "") }
     var otAfter by remember(s.id) { mutableStateOf(s.overtimeAfterMin?.let { Fmt.num(it / 60.0) } ?: "") }
     var otRate by remember(s.id) { mutableStateOf(s.overtimeRate?.let { money(it) } ?: "") }
-    var perKm by remember(s.id) { mutableStateOf(s.perKmRate?.let { String.format(java.util.Locale.US, "%.3f", it) } ?: "") }
     var night by remember(s.id) { mutableStateOf(s.nightPct?.let { Fmt.num(it) } ?: "") }
     var weekend by remember(s.id) { mutableStateOf(s.weekendPct?.let { Fmt.num(it) } ?: "") }
     var holiday by remember(s.id) { mutableStateOf(s.holidayPct?.let { Fmt.num(it) } ?: "") }
-    var more by remember { mutableStateOf(s.perKmRate != null || s.nightPct != null || s.weekendPct != null || s.holiday) }
+    var more by remember { mutableStateOf(s.nightPct != null || s.weekendPct != null || s.holiday) }
 
     @Composable
     fun NumField(value: String, label: String, modifier: Modifier, set: (String) -> Unit) = OutlinedTextField(
@@ -339,12 +336,8 @@ fun PayEditor(s: Session, now: Long, onChange: (Session) -> Unit) {
         }
     }
     SwitchRow(tr("Breaks and rest are paid"), s.paidBreaks) { onChange(s.copy(paidBreaks = it)) }
-    SwitchRow(tr("More pay rules (km, night, weekend, holiday)"), more) { more = it }
+    SwitchRow(tr("More pay rules (night, weekend, holiday)"), more) { more = it }
     if (more) {
-        NumField(perKm, tr("Pay per km (€)"), Modifier.fillMaxWidth()) {
-            perKm = it
-            onChange(s.copy(perKmRate = parseNum(it)))
-        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             NumField(night, tr("Night +%% (%d–%d h)", s.nightFromHour, s.nightToHour), Modifier.weight(1f)) {
                 night = it
@@ -378,7 +371,6 @@ fun PayEditor(s: Session, now: Long, onChange: (Session) -> Unit) {
             )
             if (more) {
                 StatRow(
-                    tr("Km pay") to Fmt.eur(Stats.kmPay(s)),
                     tr("Night/weekend") to Fmt.eur(Stats.supplementPay(s, now)),
                     tr("Night hours") to Fmt.duration(Stats.nightMs(s, now)),
                 )
@@ -403,26 +395,6 @@ fun PayEditor(s: Session, now: Long, onChange: (Session) -> Unit) {
     }
 }
 
-/** Client / employer with quick picks from earlier trips. */
-@Composable
-fun ClientField(value: String, onChange: (String) -> Unit) {
-    val known = Store.sessions.value.map { it.client }.filter { it.isNotBlank() }.distinct().take(8)
-    var open by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            value = value, onValueChange = onChange, label = { Text(tr("Client / employer")) },
-            modifier = Modifier.weight(1f), singleLine = true,
-        )
-        if (known.isNotEmpty()) {
-            Box {
-                TextButton(onClick = { open = true }) { Text("▾") }
-                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                    known.forEach { c -> DropdownMenuItem(text = { Text(c) }, onClick = { open = false; onChange(c) }) }
-                }
-            }
-        }
-    }
-}
 
 /** Receipt / invoice photos: take one, pick one, view, remove. */
 @Composable

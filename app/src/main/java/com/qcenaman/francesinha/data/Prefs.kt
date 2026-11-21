@@ -99,21 +99,17 @@ object Prefs {
         sp(ctx).edit().putString("presets", Codec.encodePresets(list)).apply()
 
 
-    fun lastClient(ctx: Context): String = sp(ctx).getString("lastClient", "") ?: ""
-    fun setLastClient(ctx: Context, v: String) = sp(ctx).edit().putString("lastClient", v).apply()
 
     /** A new trip with the default pay settings filled in. */
     fun newSessionDefaults(ctx: Context, s: com.qcenaman.francesinha.model.Session) = s.copy(
         hourlyRate = s.hourlyRate ?: rate(ctx),
         overtimeAfterMin = s.overtimeAfterMin ?: overtimeAfterMin(ctx),
         overtimeRate = s.overtimeRate ?: overtimeRate(ctx),
-        perKmRate = s.perKmRate ?: num(ctx, "perKm"),
         nightPct = s.nightPct ?: num(ctx, "nightPct"),
         weekendPct = s.weekendPct ?: num(ctx, "weekendPct"),
         holidayPct = s.holidayPct ?: num(ctx, "holidayPct"),
         nightFromHour = nightFromHour(ctx),
         nightToHour = nightToHour(ctx),
-        client = s.client.ifBlank { lastClient(ctx) },
     )
 
     /** Every setting, for backups. */

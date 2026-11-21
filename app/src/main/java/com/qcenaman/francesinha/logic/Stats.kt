@@ -22,7 +22,6 @@ data class Totals(
     val hourPay: Double = 0.0,
     val overtimePay: Double = 0.0,
     val adjustEuros: Double = 0.0,
-    val kmPay: Double = 0.0,
     val supplementPay: Double = 0.0,
     val nightMs: Long = 0,
     val weekendMs: Long = 0,
@@ -35,7 +34,7 @@ data class Totals(
     val invoicedTrips: Int = 0,
 ) {
     /** Everything earned (gross): hours, overtime, supplements, km, meals, sleepovers, extras, refunds. */
-    val euros: Double get() = hourPay + overtimePay + supplementPay + kmPay + mealEuros + sleepoverEuros + adjustEuros + refundedEuros
+    val euros: Double get() = hourPay + overtimePay + supplementPay + mealEuros + sleepoverEuros + adjustEuros + refundedEuros
     val invoiceDiff: Double get() = invoiced - invoicedExpected
 }
 
@@ -143,11 +142,9 @@ object Stats {
         return rate * (night + weekend + holiday) / 100.0 / H
     }
 
-    fun kmPay(s: Session): Double = (s.perKmRate ?: 0.0) * s.km()
-
     /** Pay for the work itself; % custom items are worked out from this. */
     fun workPay(s: Session, now: Long): Double =
-        hourPay(s, now) + overtimePay(s, now) + supplementPay(s, now) + kmPay(s)
+        hourPay(s, now) + overtimePay(s, now) + supplementPay(s, now)
 
     fun extraValue(e: com.qcenaman.francesinha.model.Extra, s: Session, now: Long): Double {
         val pct = e.percent
@@ -213,7 +210,6 @@ object Stats {
             hourPay = list.sumOf { hourPay(it, now) },
             overtimePay = list.sumOf { overtimePay(it, now) },
             adjustEuros = list.sumOf { adjustEuros(it, now) },
-            kmPay = list.sumOf { kmPay(it) },
             supplementPay = list.sumOf { supplementPay(it, now) },
             nightMs = list.sumOf { nightMs(it, now) },
             weekendMs = list.sumOf { weekendMs(it, now) },

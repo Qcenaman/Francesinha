@@ -92,10 +92,10 @@ object Codec {
             .opt("hourlyRate", s.hourlyRate).put("paidBreaks", s.paidBreaks)
             .opt("overtimeAfterMin", s.overtimeAfterMin).opt("overtimeRate", s.overtimeRate)
             .opt("invoiceEuros", s.invoiceEuros).opt("plannedEuros", s.plannedEuros)
-            .opt("perKmRate", s.perKmRate).opt("nightPct", s.nightPct).opt("weekendPct", s.weekendPct)
+            .opt("nightPct", s.nightPct).opt("weekendPct", s.weekendPct)
             .opt("holidayPct", s.holidayPct).put("holiday", s.holiday)
             .put("nightFromHour", s.nightFromHour).put("nightToHour", s.nightToHour)
-            .put("client", s.client).put("photos", JSONArray(s.photos))
+            .put("photos", JSONArray(s.photos))
             .opt("startLat", s.startLat).opt("startLon", s.startLon)
             .opt("endLat", s.endLat).opt("endLon", s.endLon)
             .put("pauses", pauses)
@@ -122,14 +122,12 @@ object Codec {
             overtimeRate = o.doubleOrNull("overtimeRate"),
             invoiceEuros = o.doubleOrNull("invoiceEuros"),
             plannedEuros = o.doubleOrNull("plannedEuros"),
-            perKmRate = o.doubleOrNull("perKmRate"),
             nightPct = o.doubleOrNull("nightPct"),
             weekendPct = o.doubleOrNull("weekendPct"),
             holidayPct = o.doubleOrNull("holidayPct"),
             holiday = o.optBoolean("holiday", false),
             nightFromHour = o.optInt("nightFromHour", 22),
             nightToHour = o.optInt("nightToHour", 7),
-            client = o.optString("client", ""),
             photos = o.optJSONArray("photos")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             pauses = (0 until arr.length()).map { pauseFromJson(arr.getJSONObject(it)) },
             extras = (0 until ex.length()).map { extraFromJson(ex.getJSONObject(it)) },

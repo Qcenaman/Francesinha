@@ -66,13 +66,6 @@ class RulesTest {
     }
 
     @Test
-    fun perKmPay() {
-        val s = tenHours.copy(manualKm = 500.0, perKmRate = 0.05)
-        assertEquals(25.0, Stats.kmPay(s), 0.001)
-        assertEquals(125.0, Stats.totalPay(s, 0), 0.001)
-    }
-
-    @Test
     fun nightSupplement() {
         // Thursday 2026-11-19 20:00 -> Friday 02:00, night from 22 to 7 = 4h
         val s = Session(id = 1, start = at(2026, 11, 19, 20), end = at(2026, 11, 20, 2), hourlyRate = 10.0, nightPct = 25.0)
@@ -102,8 +95,8 @@ class RulesTest {
         val taxes = listOf(Tax("IRS", 12.0), Tax("Segurança Social", 11.0))
         assertEquals(taxes, Codec.decodeTaxes(Codec.encodeTaxes(taxes)))
         val s = tenHours.copy(
-            perKmRate = 0.1, nightPct = 25.0, weekendPct = 50.0, holidayPct = 100.0, holiday = true,
-            nightFromHour = 21, nightToHour = 6, client = "Transportes Silva", photos = listOf("r1.jpg"),
+            nightPct = 25.0, weekendPct = 50.0, holidayPct = 100.0, holiday = true,
+            nightFromHour = 21, nightToHour = 6, photos = listOf("r1.jpg"),
             extras = listOf(Extra(1, ExtraType.CUSTOM, 0, 0.0, "n", "Bónus", 5.0, true, false), Extra(2, ExtraType.EXPENSE, 0, 4.5, name = "Toll", refunded = true)),
         )
         assertEquals(listOf(s), Codec.decode(Codec.encode(listOf(s))))

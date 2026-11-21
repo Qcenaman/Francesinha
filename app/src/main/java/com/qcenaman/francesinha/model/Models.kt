@@ -105,8 +105,6 @@ data class Session(
     val invoiceEuros: Double? = null,
     /** Expected pay entered before the trip (to compare with the invoice). */
     val plannedEuros: Double? = null,
-    /** Pay per km (null = not paid per km). */
-    val perKmRate: Double? = null,
     /** Extra % on the hourly rate for paid time at night / on weekends / on a holiday. */
     val nightPct: Double? = null,
     val weekendPct: Double? = null,
@@ -115,8 +113,6 @@ data class Session(
     /** Night window, hours of the day (wraps past midnight). */
     val nightFromHour: Int = 22,
     val nightToHour: Int = 7,
-    /** Employer / client this trip was for. */
-    val client: String = "",
     /** Receipt / invoice photo file names (in the app's receipts folder). */
     val photos: List<String> = emptyList(),
     val pauses: List<Pause> = emptyList(),

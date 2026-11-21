@@ -162,8 +162,7 @@ private fun PayRulesCard() {
     Card {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(tr("More pay rules (defaults for new trips)"), fontWeight = FontWeight.Bold)
-            Text(tr("Leave empty if not used. Pay per hour stays the main rate."), style = MaterialTheme.typography.bodySmall)
-            MoneyField(tr("Pay per km (€)"), Prefs.num(ctx, "perKm"), digits = 3) { Prefs.setNum(ctx, "perKm", it) }
+            Text(tr("Extra % on the hourly rate. Leave empty if not used."), style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MoneyField(tr("Night +%"), Prefs.num(ctx, "nightPct"), Modifier.weight(1f), 1) { Prefs.setNum(ctx, "nightPct", it) }
                 OutlinedTextField(

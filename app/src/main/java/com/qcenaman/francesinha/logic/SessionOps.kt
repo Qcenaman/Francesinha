@@ -49,7 +49,6 @@ object SessionOps {
             paidBreaks = prev.paidBreaks || cur.paidBreaks,
             overtimeAfterMin = prev.overtimeAfterMin ?: cur.overtimeAfterMin,
             overtimeRate = prev.overtimeRate ?: cur.overtimeRate,
-            client = prev.client.ifBlank { cur.client },
             photos = prev.photos + cur.photos,
             holiday = prev.holiday || cur.holiday,
             invoiceEuros = if (prev.invoiceEuros != null || cur.invoiceEuros != null) (prev.invoiceEuros ?: 0.0) + (cur.invoiceEuros ?: 0.0) else null,

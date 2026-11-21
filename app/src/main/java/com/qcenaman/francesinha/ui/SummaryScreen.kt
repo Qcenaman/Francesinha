@@ -54,7 +54,6 @@ fun SummaryScreen(modifier: Modifier) {
     val mealsFree = Prefs.mealsTaxFree(ctx)
     val taxes = Prefs.taxes(ctx)
     val t = Stats.totals(list, now, mealsFree)
-    val clients = list.groupBy { it.client.ifBlank { "—" } }
     val days = list.groupBy { Fmt.isoDate(it.start) }.toSortedMap(compareByDescending { it })
 
     LazyColumn(modifier, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -93,10 +92,9 @@ fun SummaryScreen(modifier: Modifier) {
                         tr("Sleepovers") to t.sleepovers.toString(),
                         tr("Extras") to Fmt.eur(t.adjustEuros),
                     )
-                    if (t.kmPay > 0 || t.supplementPay > 0) {
+                    if (t.supplementPay > 0) {
                         Spacer(Modifier.height(8.dp))
                         StatRow(
-                            tr("Km pay") to Fmt.eur(t.kmPay),
                             tr("Night/weekend") to Fmt.eur(t.supplementPay),
                             tr("Night hours") to Fmt.duration(t.nightMs),
                         )
@@ -154,24 +152,6 @@ fun SummaryScreen(modifier: Modifier) {
         }
         if (period == Period.MONTH || period == Period.LAST_MONTH) {
             item(key = "month-" + Fmt.isoDate(from).take(7)) { MonthPayCard(Fmt.isoDate(from).take(7), t.euros, t.taxable) }
-        }
-        if (clients.size > 1 || (clients.size == 1 && clients.keys.first() != "—")) {
-            item { Text(tr("By client"), style = MaterialTheme.typography.titleMedium) }
-            items(clients.entries.toList(), key = { "c-" + it.key }) { (name, cs) ->
-                val ct = Stats.totals(cs, now, mealsFree)
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
-                        Row {
-                            Text(name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text(Fmt.eur(ct.euros), fontWeight = FontWeight.Bold)
-                        }
-                        Text(
-                            tr("%d trips · paid %s · %s", ct.sessions, Fmt.duration(ct.paidMs), Fmt.km(ct.km)),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
         }
         if (days.isNotEmpty()) item { Text(tr("By day"), style = MaterialTheme.typography.titleMedium) }
         items(days.entries.toList(), key = { it.key }) { (_, daySessions) ->
